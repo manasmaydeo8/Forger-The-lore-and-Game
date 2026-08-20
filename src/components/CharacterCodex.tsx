@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { CharacterStats, TTSVoice } from '../types';
-import { fetchTTSAudio, playAudioUrl, stopAllAudio } from '../services/ttsService';
+import { fetchTTSAudio, playAudioUrl, stopAllAudio, narrateText } from '../services/ttsService';
 import { SoundFX } from '../utils/soundEffects';
 import {
   Shield,
@@ -77,12 +77,12 @@ export const CharacterCodex: React.FC<CharacterCodexProps> = ({
     try {
       setIsLoadingAudio(true);
       const textToSpeak = `${currentLore.title}. ${currentLore.subtitle}. ${currentLore.content}`;
-      const url = await fetchTTSAudio(textToSpeak, voice);
       setIsLoadingAudio(false);
       setIsPlayingLore(true);
 
-      playAudioUrl(
-        url,
+      await narrateText(
+        textToSpeak,
+        voice,
         () => setIsPlayingLore(false),
         () => {
           setIsPlayingLore(false);

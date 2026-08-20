@@ -7,6 +7,7 @@ let currentAudio: HTMLAudioElement | null = null;
 let currentBufferSource: AudioBufferSourceNode | null = null;
 let sharedAudioCtx: AudioContext | null = null;
 let isCurrentlyPlaying = false;
+let currentUtterance: SpeechSynthesisUtterance | null = null;
 
 function getSharedAudioContext(): AudioContext {
   if (!sharedAudioCtx || sharedAudioCtx.state === 'closed') {
@@ -17,6 +18,69 @@ function getSharedAudioContext(): AudioContext {
     sharedAudioCtx.resume().catch(() => {});
   }
   return sharedAudioCtx;
+}
+
+/**
+ * Fallback narration using browser Web Speech Synthesis API
+ */
+export function playWebSpeechFallback(
+  text: string,
+  voice: TTSVoice = 'Fenrir',
+  onEnd?: () => void,
+  onError?: (err: any) => void
+): void {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+    if (onError) onError(new Error('Speech synthesis not supported in this browser.'));
+    return;
+  }
+
+  stopAllAudio();
+  isCurrentlyPlaying = true;
+
+  const utterance = new SpeechSynthesisUtterance(text);
+  currentUtterance = utterance;
+
+  // Configure pitch, rate and voice based on character persona
+  if (voice === 'Fenrir' || voice === 'Charon') {
+    utterance.pitch = 0.85;
+    utterance.rate = 0.95;
+  } else if (voice === 'Kore') {
+    utterance.pitch = 1.15;
+    utterance.rate = 1.0;
+  } else {
+    utterance.pitch = 1.0;
+    utterance.rate = 1.0;
+  }
+
+  // Try to pick a fitting system voice if available
+  const availableVoices = window.speechSynthesis.getVoices();
+  if (availableVoices && availableVoices.length > 0) {
+    const englishVoices = availableVoices.filter((v) => v.lang.startsWith('en'));
+    if (englishVoices.length > 0) {
+      if (voice === 'Fenrir' || voice === 'Charon') {
+        const maleVoice = englishVoices.find((v) => /male|david|daniel|james/i.test(v.name));
+        if (maleVoice) utterance.voice = maleVoice;
+      } else if (voice === 'Kore' || voice === 'Zephyr') {
+        const femaleVoice = englishVoices.find((v) => /female|zira|samantha|karen|victoria/i.test(v.name));
+        if (femaleVoice) utterance.voice = femaleVoice;
+      }
+    }
+  }
+
+  utterance.onend = () => {
+    isCurrentlyPlaying = false;
+    currentUtterance = null;
+    if (onEnd) onEnd();
+  };
+
+  utterance.onerror = (e) => {
+    console.warn('SpeechSynthesis error:', e);
+    isCurrentlyPlaying = false;
+    currentUtterance = null;
+    if (onError) onError(e);
+  };
+
+  window.speechSynthesis.speak(utterance);
 }
 
 export async function fetchTTSAudio(text: string, voice: TTSVoice = 'Fenrir'): Promise<string> {
@@ -34,7 +98,7 @@ export async function fetchTTSAudio(text: string, voice: TTSVoice = 'Fenrir'): P
 
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));
-      throw new Error(errData.error || `TTS request failed with status ${response.status}`);
+      throw new Error(errData.error || `TTS request returned status ${response.status}`);
     }
 
     const data = await response.json();
@@ -45,8 +109,30 @@ export async function fetchTTSAudio(text: string, voice: TTSVoice = 'Fenrir'): P
     audioCache.set(cacheKey, data.audioUrl);
     return data.audioUrl;
   } catch (err: any) {
-    console.warn('TTS API error:', err);
+    console.warn('Gemini TTS API unavailable:', err?.message || err);
     throw err;
+  }
+}
+
+/**
+ * Universal narration helper: attempts Gemini 3.1 Flash TTS, with graceful Web Speech API fallback
+ */
+export async function narrateText(
+  text: string,
+  voice: TTSVoice = 'Fenrir',
+  onEnd?: () => void,
+  onError?: (err: any) => void
+): Promise<void> {
+  stopAllAudio();
+  try {
+    const audioUrl = await fetchTTSAudio(text, voice);
+    playAudioUrl(audioUrl, onEnd, (err) => {
+      console.warn('HTML Audio playback failed, falling back to Web Speech synthesis:', err);
+      playWebSpeechFallback(text, voice, onEnd, onError);
+    });
+  } catch (err) {
+    console.info('TTS API unavailable or quota reached. Engaging Web Speech synthesis fallback.');
+    playWebSpeechFallback(text, voice, onEnd, onError);
   }
 }
 

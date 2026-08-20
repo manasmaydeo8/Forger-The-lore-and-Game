@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { StorySection, TTSVoice } from '../types';
-import { fetchTTSAudio, playAudioUrl, stopAllAudio } from '../services/ttsService';
+import { fetchTTSAudio, playAudioUrl, stopAllAudio, narrateText } from '../services/ttsService';
 import { SoundFX } from '../utils/soundEffects';
 import {
   Volume2,
@@ -54,13 +54,12 @@ export const NovelReader: React.FC<NovelReaderProps> = ({
       stopAllAudio();
 
       const cleanedText = text.replace(/\*\*/g, '').replace(/\n+/g, ' ');
-      const audioUrl = await fetchTTSAudio(cleanedText, voice);
-
       setIsLoadingTTS(null);
       setActiveParagraphId(pId);
 
-      playAudioUrl(
-        audioUrl,
+      await narrateText(
+        cleanedText,
+        voice,
         () => {
           setActiveParagraphId(null);
         },
@@ -70,7 +69,7 @@ export const NovelReader: React.FC<NovelReaderProps> = ({
         }
       );
     } catch (e) {
-      console.error('Failed to play paragraph audio:', e);
+      console.warn('Paragraph audio narration notification:', e);
       setIsLoadingTTS(null);
       setActiveParagraphId(null);
     }

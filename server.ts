@@ -80,7 +80,108 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: Date.now() });
 });
 
-// TTS Endpoint using gemini-3.1-flash-tts-preview
+// Fallback procedural skill analyzer for when Gemini is temporarily experiencing high load (503/429)
+function generateProceduralForgeAnalysis(skillName: string, description: string, userMana: number) {
+  const cleanName = skillName.trim() || 'Void Resonance';
+  const nameLower = cleanName.toLowerCase();
+  const descLower = (description || '').toLowerCase();
+
+  const isCorrupt =
+    nameLower.includes('abyss') ||
+    nameLower.includes('demon') ||
+    nameLower.includes('blood') ||
+    nameLower.includes('dark') ||
+    nameLower.includes('shadow') ||
+    descLower.includes('corrupt') ||
+    descLower.includes('forbidden');
+
+  const ranks = ['F', 'E', 'D', 'C', 'B', 'A', 'S'] as const;
+  const publicRank = isCorrupt ? 'F' : ranks[Math.floor(Math.random() * 3)]; // F, E, or D publicly
+  const trueRank = isCorrupt ? 'UNKNOWN / SSS+' : 'Ancient Primordial Tier IV';
+  const manaCost = Math.min(Math.max(Math.floor(userMana * 0.15), 3), 20);
+  const activeCost = Math.floor(manaCost * 1.5);
+
+  return {
+    skillName: cleanName,
+    publicRank,
+    trueRank,
+    manaCostPermanent: manaCost,
+    activeManaCost: activeCost,
+    magicalStructure: isCorrupt
+      ? 'Inverted Void Hexahedron with Non-Euclidean Mana Vectors'
+      : 'Octahedral Crystalline Core with Concentric Compression Rings',
+    manaFlow: isCorrupt
+      ? 'Retrograde Abyssal Siphon — Direct Soul Anchoring'
+      : 'Bipolar Laminar Circulation along Primary Meridians',
+    ignitionPhase: '0.042 ms (Sub-microsecond Instantaneous Pulse)',
+    compressionRatio: isCorrupt ? '1:480 (Extreme Singularity)' : '1:64 (High Density)',
+    stages: [
+      {
+        stage: 1,
+        name: `${cleanName} — Genesis`,
+        effect: `Basic manifestation of ${cleanName}. Creates a localized field with 100% mana efficiency.`,
+      },
+      {
+        stage: 5,
+        name: `${cleanName} — Resonant Harmonic`,
+        effect: `Compression ratio triples. Mana output increases by 250% while active mana consumption remains flat.`,
+      },
+      {
+        stage: 10,
+        name: `${cleanName} — Sovereign Domain`,
+        effect: `The matrix breaks physical bounds. Manifests an autonomous aura that automatically counters enemy spells.`,
+      },
+      {
+        stage: 15,
+        name: `${cleanName} — True Origin (Transcendence)`,
+        effect: `Absolute deconstruction of atmospheric concepts. Ignores all standard magical shields and status immunities.`,
+      },
+    ],
+    corruptionDetected: isCorrupt,
+    corruptionWarning: isCorrupt
+      ? 'CRITICAL WARNING: This skill taps into the Primeval Abyss. The Awakening Council classified this formula as Level 9 Heresy.'
+      : null,
+    systemLog: `[FORGER PROTOCOL] — Formula deconstructed into 4 fundamental mana circuits. Public appraisal set to [Rank ${publicRank}] to evade Hunter Bureau inspection. True potency estimated at [${trueRank}].`,
+  };
+}
+
+// Helper to run generateContent with timeout, model fallback, and procedural backup
+async function generateWithRetry(prompt: string, systemInstruction: string, timeoutMs = 6000): Promise<string> {
+  const ai = getAI();
+  const modelsToTry = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+
+  let lastError: any = null;
+
+  for (const model of modelsToTry) {
+    try {
+      const generatePromise = ai.models.generateContent({
+        model,
+        contents: prompt,
+        config: {
+          systemInstruction,
+          responseMimeType: 'application/json',
+        },
+      });
+
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Model ${model} request timed out after ${timeoutMs}ms`)), timeoutMs)
+      );
+
+      const response: any = await Promise.race([generatePromise, timeoutPromise]);
+
+      if (response?.text) {
+        return response.text;
+      }
+    } catch (err: any) {
+      lastError = err;
+      console.warn(`[Gemini API] Call with model ${model} failed/timed out:`, err?.message || err);
+    }
+  }
+
+  throw lastError || new Error('All model attempts failed');
+}
+
+// TTS Endpoint using gemini-3.1-flash-tts-preview with retry
 app.post('/api/tts', async (req, res) => {
   try {
     const { text, voice = 'Fenrir' } = req.body;
@@ -96,18 +197,37 @@ app.post('/api/tts', async (req, res) => {
     // Optimize prompt for immersive fantasy storytelling narration
     const prompt = `Narrate with dramatic, cinematic intensity and solemn pacing suitable for a dark fantasy light novel:\n\n${text}`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.1-flash-tts-preview',
-      contents: [{ parts: [{ text: prompt }] }],
-      config: {
-        responseModalities: [Modality.AUDIO],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: chosenVoice },
+    let response: any = null;
+    let lastErr: any = null;
+
+    // Retry up to 2 times on transient failures
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        response = await ai.models.generateContent({
+          model: 'gemini-3.1-flash-tts-preview',
+          contents: [{ parts: [{ text: prompt }] }],
+          config: {
+            responseModalities: [Modality.AUDIO],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName: chosenVoice },
+              },
+            },
           },
-        },
-      },
-    });
+        });
+        if (response) break;
+      } catch (err: any) {
+        lastErr = err;
+        console.warn(`TTS attempt ${attempt} failed:`, err?.message || err);
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, 400));
+        }
+      }
+    }
+
+    if (!response) {
+      throw lastErr || new Error('Failed to generate TTS audio');
+    }
 
     const parts = response.candidates?.[0]?.content?.parts || [];
     const audioPart = parts.find((p: any) => p.inlineData?.data) || parts[0];
@@ -149,13 +269,11 @@ app.post('/api/tts', async (req, res) => {
   }
 });
 
-// Interactive Skill Forge Analysis Endpoint
+// Interactive Skill Forge Analysis Endpoint with multi-model fallback & resilience
 app.post('/api/gemini/forge-analysis', async (req, res) => {
-  try {
-    const { skillName, description, userMana = 87 } = req.body;
-    const ai = getAI();
+  const { skillName = 'Mystic Surge', description = '', userMana = 87 } = req.body;
 
-    const systemInstruction = `You are the mysterious Forger System Interface from the dark fantasy world of Aetheria.
+  const systemInstruction = `You are the mysterious Forger System Interface from the dark fantasy world of Aetheria.
 Aryan holds the Unique Skill [FORGER] (Public Rank F, True Rank Unknown).
 When analyzing a skill to forge:
 Provide structured analysis in JSON:
@@ -180,21 +298,16 @@ Provide structured analysis in JSON:
   "systemLog": string
 }`;
 
-    const prompt = `Analyze this skill for the Forger system: Name: "${skillName || 'Unknown Skill'}", Context/Idea: "${description || 'Basic combat skill'}". Aryan currently has ${userMana} Permanent Mana remaining.`;
+  const prompt = `Analyze this skill for the Forger system: Name: "${skillName}", Context/Idea: "${description || 'Combat skill with unique progression'}". Aryan currently has ${userMana} Permanent Mana remaining.`;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.7-flash',
-      contents: prompt,
-      config: {
-        systemInstruction,
-        responseMimeType: 'application/json',
-      },
-    });
-
-    res.json(JSON.parse(response.text || '{}'));
+  try {
+    const rawJson = await generateWithRetry(prompt, systemInstruction);
+    const parsed = JSON.parse(rawJson);
+    res.json(parsed);
   } catch (error: any) {
-    console.error('Skill analysis failed:', error);
-    res.status(500).json({ error: error.message || 'Skill analysis failed.' });
+    console.warn('Gemini live generation unavailable, activating Forger procedural matrix fallback:', error?.message);
+    const proceduralFallback = generateProceduralForgeAnalysis(skillName, description, userMana);
+    res.json(proceduralFallback);
   }
 });
 

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { CharacterStats, ForgedSkill, TTSVoice } from '../types';
 import { SoundFX } from '../utils/soundEffects';
-import { fetchTTSAudio, playAudioUrl, stopAllAudio } from '../services/ttsService';
+import { fetchTTSAudio, playAudioUrl, stopAllAudio, narrateText } from '../services/ttsService';
+import { SkillEvolutionGraph } from './SkillEvolutionGraph';
 import {
   Hammer,
   Zap,
@@ -20,6 +21,8 @@ import {
   Volume2,
   CheckCircle2,
   RefreshCw,
+  GitBranch,
+  Network,
 } from 'lucide-react';
 
 interface ForgeLabProps {
@@ -38,10 +41,12 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
   voice,
 }) => {
   const [selectedSkillId, setSelectedSkillId] = useState<string>(skills[0]?.id || 'fireball-spell');
+  const [forgeTab, setForgeTab] = useState<'tree' | 'catalog' | 'split'>('split');
   const [customSkillName, setCustomSkillName] = useState('');
   const [customSkillDesc, setCustomSkillDesc] = useState('');
   const [isAnalyzingAI, setIsAnalyzingAI] = useState(false);
   const [analyzedSkillResult, setAnalyzedSkillResult] = useState<any | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [forgeSuccessMsg, setForgeSuccessMsg] = useState<string | null>(null);
   const [isSpeakingResult, setIsSpeakingResult] = useState(false);
 
@@ -107,6 +112,7 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
     try {
       setIsAnalyzingAI(true);
       setAnalyzedSkillResult(null);
+      setAnalysisError(null);
 
       const res = await fetch('/api/gemini/forge-analysis', {
         method: 'POST',
@@ -118,13 +124,17 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
         }),
       });
 
-      if (!res.ok) throw new Error('AI analysis failed');
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'AI analysis request failed');
+      }
+
       const data = await res.json();
       setAnalyzedSkillResult(data);
       SoundFX.playSystemNotification();
     } catch (err: any) {
-      console.error(err);
-      alert('Failed to analyze skill with Gemini: ' + err.message);
+      console.warn('Forge analysis warning:', err);
+      setAnalysisError(err.message || 'System analysis encountered interference. Please try again.');
     } finally {
       setIsAnalyzingAI(false);
     }
@@ -136,7 +146,8 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
 
     const cost = analyzedSkillResult.manaCostPermanent || 10;
     if (stats.permanentMana < cost) {
-      alert('INSUFFICIENT PERMANENT MANA!');
+      setForgeSuccessMsg(`[SYSTEM ERROR] — Insufficient Permanent Mana! Need ${cost} MP.`);
+      setTimeout(() => setForgeSuccessMsg(null), 4000);
       return;
     }
 
@@ -188,8 +199,12 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
     try {
       setIsSpeakingResult(true);
       const textToSpeak = `System analysis complete for skill ${analyzedSkillResult.skillName}. Public classification: Rank ${analyzedSkillResult.publicRank}. True Rank: ${analyzedSkillResult.trueRank}. Permanent Mana requirement: ${analyzedSkillResult.manaCostPermanent} points. ${analyzedSkillResult.systemLog || ''}`;
-      const url = await fetchTTSAudio(textToSpeak, voice);
-      playAudioUrl(url, () => setIsSpeakingResult(false), () => setIsSpeakingResult(false));
+      await narrateText(
+        textToSpeak,
+        voice,
+        () => setIsSpeakingResult(false),
+        () => setIsSpeakingResult(false)
+      );
     } catch (e) {
       setIsSpeakingResult(false);
     }
@@ -253,10 +268,91 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
             <span>{forgeSuccessMsg}</span>
           </div>
         )}
+
+        {/* Forge Console View Tabs */}
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-[#1a1a1a]">
+          <div className="flex items-center space-x-1.5 bg-[#050505] p-1 rounded-md border border-[#1a1a1a]">
+            <button
+              onClick={() => {
+                SoundFX.playSystemNotification();
+                setForgeTab('split');
+              }}
+              className={`px-3 py-1.5 rounded font-mono text-xs uppercase tracking-wider flex items-center space-x-1.5 transition ${
+                forgeTab === 'split'
+                  ? 'bg-white text-black font-bold shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>Integrated Console</span>
+            </button>
+
+            <button
+              onClick={() => {
+                SoundFX.playSystemNotification();
+                setForgeTab('tree');
+              }}
+              className={`px-3 py-1.5 rounded font-mono text-xs uppercase tracking-wider flex items-center space-x-1.5 transition ${
+                forgeTab === 'tree'
+                  ? 'bg-white text-black font-bold shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Network className="w-3.5 h-3.5" />
+              <span>Soul Evolution Tree (D3)</span>
+            </button>
+
+            <button
+              onClick={() => {
+                SoundFX.playSystemNotification();
+                setForgeTab('catalog');
+              }}
+              className={`px-3 py-1.5 rounded font-mono text-xs uppercase tracking-wider flex items-center space-x-1.5 transition ${
+                forgeTab === 'catalog'
+                  ? 'bg-white text-black font-bold shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Cpu className="w-3.5 h-3.5" />
+              <span>Blueprints & Deconstruction</span>
+            </button>
+          </div>
+
+          <div className="text-[11px] font-mono text-slate-500 hidden sm:block">
+            ACTIVE MATRIX: <span className="text-slate-300 font-bold">{selectedSkill.name}</span>
+          </div>
+        </div>
       </div>
 
-      {/* Main Grid: Skills Catalog & Detail View */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      {/* D3 Evolution Tree View (if in tree or split view) */}
+      {(forgeTab === 'tree' || forgeTab === 'split') && (
+        <div className="space-y-2">
+          {forgeTab === 'split' && (
+            <div className="flex items-center justify-between px-1">
+              <h2 className="text-[11px] font-mono uppercase tracking-[0.2em] text-slate-400 font-bold flex items-center space-x-2">
+                <GitBranch className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Aryan's Skill Evolution Matrix</span>
+              </h2>
+              <span className="text-[10px] font-mono text-slate-500">
+                Drag nodes to reposition • Click to inspect & evolve
+              </span>
+            </div>
+          )}
+
+          <SkillEvolutionGraph
+            skills={skills}
+            selectedSkillId={selectedSkillId}
+            onSelectSkill={(id) => setSelectedSkillId(id)}
+            onEvolveSkill={(id) => handleEvolveSkill(id)}
+            onForgeSkill={(skill) => handleForgeSkill(skill)}
+            permanentMana={stats.permanentMana}
+          />
+        </div>
+      )}
+
+      {/* Main Grid: Skills Catalog & Detail View (if in catalog or split view) */}
+      {(forgeTab === 'catalog' || forgeTab === 'split') && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Available Skills List */}
         <div className="lg:col-span-4 space-y-4">
           <div className="flex items-center justify-between">
@@ -368,6 +464,13 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
                   </>
                 )}
               </button>
+
+              {analysisError && (
+                <div className="p-2.5 rounded bg-rose-950/40 border border-rose-800/60 text-rose-300 font-mono text-[11px] flex items-start space-x-2">
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0 mt-0.5" />
+                  <p>{analysisError}</p>
+                </div>
+              )}
             </form>
           </div>
         </div>
@@ -607,6 +710,7 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
           )}
         </div>
       </div>
+      )}
     </div>
   );
 };

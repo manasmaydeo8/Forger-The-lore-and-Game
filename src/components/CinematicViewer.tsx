@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StorySection, TTSVoice } from '../types';
 import { SoundFX } from '../utils/soundEffects';
-import { fetchTTSAudio, playAudioUrl, stopAllAudio } from '../services/ttsService';
+import { fetchTTSAudio, playAudioUrl, stopAllAudio, narrateText } from '../services/ttsService';
 import {
   Play,
   Pause,
@@ -124,12 +124,12 @@ export const CinematicViewer: React.FC<CinematicViewerProps> = ({
         .replace(/\*\*/g, '')
         .replace(/\n+/g, ' ');
 
-      const audioUrl = await fetchTTSAudio(textToSpeak, voice);
       setIsLoadingAudio(false);
       setIsPlaying(true);
 
-      audioRef.current = playAudioUrl(
-        audioUrl,
+      await narrateText(
+        textToSpeak,
+        voice,
         () => {
           setIsPlaying(false);
           if (autoAdvance && !isLastParagraph) {
