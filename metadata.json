@@ -1,0 +1,6 @@
+{
+  "name": "FORGER: The Trash Skill That Shouldn't Exist",
+  "description": "Immersive cinematic audio-visual story reader and interactive System Interface for FORGER featuring Gemini 3.1 Flash TTS narration, Skill Forging lab, and character codex.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

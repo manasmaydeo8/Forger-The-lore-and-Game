@@ -1,0 +1,81 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-cinzel: 'Cinzel', serif;
+    --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+    --font-serif: 'Playfair Display', Georgia, serif;
+  }
+
+  body {
+    background-color: #050505;
+    color: #cbd5e1;
+    font-family: var(--font-sans);
+  }
+}
+
+.font-cinzel {
+  font-family: var(--font-cinzel);
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+.font-serif {
+  font-family: var(--font-serif);
+}
+
+/* Elegant Dark atmospheric glows & effects */
+.glow-white {
+  box-shadow: 0 0 16px 2px rgba(255, 255, 255, 0.4);
+}
+
+.glow-cyan {
+  box-shadow: 0 0 20px 1px rgba(8, 145, 178, 0.35);
+}
+
+.glow-crimson {
+  box-shadow: 0 0 20px 1px rgba(225, 29, 72, 0.35);
+}
+
+.system-window {
+  background: #0a0a0a;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.corrupted-window {
+  background: #0d0608;
+  border: 1px solid rgba(244, 63, 94, 0.35);
+  box-shadow: 0 8px 32px 0 rgba(18, 3, 6, 0.9), inset 0 1px 0 rgba(244, 63, 94, 0.15);
+}
+
+.dark-panel {
+  background-color: #0a0a0a;
+  border: 1px solid #1a1a1a;
+}
+
+.dark-subpanel {
+  background-color: #0d0d0d;
+  border: 1px solid #222222;
+}
+
+/* Custom minimal scrollbars */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: #050505;
+}
+::-webkit-scrollbar-thumb {
+  background: #1a1a1a;
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2a2a2a;
+}
+
+
