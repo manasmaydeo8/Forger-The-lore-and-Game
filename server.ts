@@ -349,9 +349,9 @@ function generateProceduralForgeAnalysis(skillName: string, description: string,
 }
 
 // Helper to run generateContent with timeout, model fallback, and procedural backup
-async function generateWithRetry(prompt: string, systemInstruction: string, timeoutMs = 6000): Promise<string> {
+async function generateWithRetry(prompt: string, systemInstruction: string, timeoutMs = 8000): Promise<string> {
   const ai = getAI();
-  const modelsToTry = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+  const modelsToTry = ['gemini-3.7-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
 
   let lastError: any = null;
 
@@ -403,7 +403,7 @@ app.post('/api/tts', async (req, res) => {
     let response: any = null;
     let lastErr: any = null;
 
-    // Retry up to 2 times on transient failures
+    // Attempt Gemini TTS
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
         response = await ai.models.generateContent({
@@ -421,7 +421,13 @@ app.post('/api/tts', async (req, res) => {
         if (response) break;
       } catch (err: any) {
         lastErr = err;
-        console.warn(`TTS attempt ${attempt} failed:`, err?.message || err);
+        const errMsg = err?.message || '';
+        if (errMsg.includes('429') || errMsg.includes('quota') || errMsg.includes('RESOURCE_EXHAUSTED')) {
+          console.warn(`[Gemini TTS] Quota limit reached on attempt ${attempt}. Switching to client fallback.`);
+          break; // Stop retrying on 429 quota exhaustion to avoid unnecessary delay
+        } else {
+          console.warn(`TTS attempt ${attempt} failed:`, errMsg || err);
+        }
         if (attempt < 2) {
           await new Promise((r) => setTimeout(r, 400));
         }
@@ -429,7 +435,12 @@ app.post('/api/tts', async (req, res) => {
     }
 
     if (!response) {
-      throw lastErr || new Error('Failed to generate TTS audio');
+      const isQuota = lastErr?.message?.includes('429') || lastErr?.message?.includes('quota') || lastErr?.message?.includes('RESOURCE_EXHAUSTED');
+      res.status(isQuota ? 429 : 500).json({ 
+        error: isQuota ? 'TTS API quota reached. Using browser speech synthesis.' : (lastErr?.message || 'Failed to generate TTS audio.'),
+        quotaExceeded: isQuota
+      });
+      return;
     }
 
     const parts = response.candidates?.[0]?.content?.parts || [];
@@ -467,8 +478,14 @@ app.post('/api/tts', async (req, res) => {
       sampleRate,
     });
   } catch (error: any) {
-    console.error('TTS generation failed:', error);
-    res.status(500).json({ error: error.message || 'TTS generation failed.' });
+    const isQuota = error?.message?.includes('429') || error?.message?.includes('quota') || error?.message?.includes('RESOURCE_EXHAUSTED');
+    if (!isQuota) {
+      console.error('TTS generation failed:', error?.message || error);
+    }
+    res.status(isQuota ? 429 : 500).json({ 
+      error: error.message || 'TTS generation failed.',
+      quotaExceeded: isQuota
+    });
   }
 });
 

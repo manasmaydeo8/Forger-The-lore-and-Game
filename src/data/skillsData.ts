@@ -7,6 +7,8 @@ export const INITIAL_ARYAN_STATS: CharacterStats = {
   level: 1,
   experience: 0,
   nextLevelExp: 100,
+  hp: 120,
+  maxHp: 120,
   strength: 7,
   agility: 8,
   defense: 6,
@@ -18,6 +20,28 @@ export const INITIAL_ARYAN_STATS: CharacterStats = {
   strategicStance: 'Pure Wellspring',
   activeMana: 45,
   maxActiveMana: 45,
+  manaCrystals: 85,
+  voidManaCrystals: 12,
+  totalCrystalsHarvested: 85,
+  totalVoidCrystalsHarvested: 12,
+  relicInventory: [
+    {
+      id: 'abyssal-void-harvester-band',
+      name: 'Void Harvester Ring of Malice',
+      rarity: 'Rare',
+      type: 'relic',
+      description: 'An obsidian ring inscribed with corpse-siphon glyphs. Intensifies crystal condensation when deconstructing defeated monster corpses.',
+      loreSnippet: 'Worn by outlaw soul-harvesters in the lawless northern wastes of Aetheria.',
+      icon: '💍',
+      statsBonus: {
+        crystalHarvestBonus: 35,
+        agilityBonus: 6,
+      },
+      specialEffect: 'Increases all Monster Mana Crystal and Void Crystal harvest yields by +35%.',
+      isEquipped: true,
+    },
+  ],
+  equippedRelicIds: ['abyssal-void-harvester-band'],
   manaCoreIntegrity: 100,
   statusEffects: [
     'Innate: Primordial Mana Wellspring (Autonomic Replenishment)',
@@ -56,6 +80,8 @@ export const INITIAL_SKILLS: ForgedSkill[] = [
     maxStages: 15,
     isForged: true,
     isCorrupted: false,
+    synergyTags: ['Unique', 'sovereign', 'universal'],
+    relatedSkillIds: ['fireball-spell', 'glacial-spike', 'void-drift', 'gravity-well'],
     stages: [
       { stage: 1, name: 'Skill Analysis & Blueprint Extraction', description: 'Analyze magical structure and requirements of raw spells and monster instincts.', manaMultiplier: 1.0, effect: 'Enables skill synthesis and permanent soul engraving.' },
       { stage: 5, name: 'Multi-Matrix Fusion', description: 'Combine two distinct skill archetypes into a composite sovereign spell.', manaMultiplier: 1.8, effect: 'Reduces permanent mana cost by 20% on composite spells.' },
@@ -80,6 +106,8 @@ export const INITIAL_SKILLS: ForgedSkill[] = [
     maxStages: 15,
     isForged: true,
     isCorrupted: false,
+    synergyTags: ['Elemental', 'fire', 'combustion', 'offensive'],
+    relatedSkillIds: ['glacial-spike', 'thunderclap-javelin'],
     stages: [
       { stage: 1, name: 'Basic Fireball', description: 'Launches a single compact ball of flame with minor burn splash.', manaMultiplier: 1.0, effect: 'Deals 60 base fire damage + INT scaling.' },
       { stage: 3, name: 'Combustion Nova', description: 'Increases blast radius to 6 meters and leaves an enduring thermal zone on impact.', manaMultiplier: 1.4, effect: 'Deals 140 damage and inflicts 3s Burn dot (15 dmg/s).' },
@@ -104,6 +132,8 @@ export const INITIAL_SKILLS: ForgedSkill[] = [
     maxStages: 15,
     isForged: false,
     isCorrupted: false,
+    synergyTags: ['Elemental', 'ice', 'cryo', 'freeze'],
+    relatedSkillIds: ['fireball-spell', 'thunderclap-javelin'],
     stages: [
       { stage: 1, name: 'Frost Javelin', description: 'Hurls a sharp ice spire that impales the target and reduces movement speed.', manaMultiplier: 1.0, effect: 'Deals 75 Cryo damage and slows target movement by 35% for 4s.' },
       { stage: 5, name: 'Permafrost Burst', description: 'Detonates shattered ice shards upon impact in a 5-meter radius.', manaMultiplier: 1.8, effect: 'Causes Freezing status; targets afflicted take 20% bonus physical damage.' },
@@ -128,6 +158,8 @@ export const INITIAL_SKILLS: ForgedSkill[] = [
     maxStages: 15,
     isForged: false,
     isCorrupted: false,
+    synergyTags: ['Perception', 'vision', 'optical', 'reflex'],
+    relatedSkillIds: ['predator-instinct', 'void-drift'],
     stages: [
       { stage: 1, name: 'Cat\'s Gaze', description: 'See clearly in caves and nighttime environments up to 30 meters.', manaMultiplier: 1.0, effect: 'Eliminates darkness accuracy penalties and blind debuffs.' },
       { stage: 5, name: 'Thermal Bio-Sight', description: 'Detects biological heat signatures through thin foliage or walls.', manaMultiplier: 1.6, effect: 'Reveals concealed, invisible, and camouflaged enemies.' },
@@ -152,6 +184,8 @@ export const INITIAL_SKILLS: ForgedSkill[] = [
     maxStages: 15,
     isForged: false,
     isCorrupted: false,
+    synergyTags: ['Unique', 'spatial', 'gravity', 'void', 'teleport'],
+    relatedSkillIds: ['gravity-well', 'temporal-echo'],
     stages: [
       { stage: 1, name: 'Shadow Blink', description: 'Instantaneously teleports up to 8 meters into any targeted shadow.', manaMultiplier: 1.0, effect: 'Disengages threat and grants 0.5s invulnerability during transit.' },
       { stage: 5, name: 'Phase Ambush', description: 'Emerging from the shadow guarantees a critical strike on unsuspecting targets.', manaMultiplier: 2.2, effect: 'Next physical or spell attack deals +100% Critical Strike damage.' },
@@ -176,6 +210,8 @@ export const INITIAL_SKILLS: ForgedSkill[] = [
     maxStages: 15,
     isForged: false,
     isCorrupted: false,
+    synergyTags: ['Elemental', 'lightning', 'plasma', 'chain'],
+    relatedSkillIds: ['fireball-spell', 'glacial-spike'],
     stages: [
       { stage: 1, name: 'Static Javelin', description: 'Hurls a supersonic bolt of lightning that shocks the target.', manaMultiplier: 1.0, effect: 'Deals 90 Lightning damage and applies Electro-Static shock.' },
       { stage: 5, name: 'Arc Lightning Chain', description: 'Lightning discharges to up to 4 additional enemies within 8 meters.', manaMultiplier: 2.0, effect: 'Each chain hit deals 75% damage and interrupts enemy spell casting.' },
@@ -200,6 +236,8 @@ export const INITIAL_SKILLS: ForgedSkill[] = [
     maxStages: 15,
     isForged: false,
     isCorrupted: true,
+    synergyTags: ['Corrupted', 'abyssal', 'blood', 'demon', 'reflex'],
+    relatedSkillIds: ['blood-boil-hex', 'night-vision'],
     corruptedDetails: {
       signature: 'Ancient Demon Lord Valgora / Abaddon Matrix',
       origin: 'Deep subterranean abyssal seal leaking into low-tier goblin soul streams.',
@@ -230,6 +268,8 @@ export const INITIAL_SKILLS: ForgedSkill[] = [
     maxStages: 15,
     isForged: false,
     isCorrupted: false,
+    synergyTags: ['Body', 'vitality', 'healing', 'mitosis'],
+    relatedSkillIds: ['aether-aegis'],
     stages: [
       { stage: 1, name: 'Flesh Mending', description: 'Heals minor cuts, bruises, and lacerations over 10 seconds.', manaMultiplier: 1.0, effect: 'Restores 15 HP per second for 10 seconds.' },
       { stage: 5, name: 'Bone Rejoining', description: 'Rapidly knits fractured bones and stops severe arterial hemorrhaging.', manaMultiplier: 2.2, effect: 'Cures Crippled and Bleeding status effects; instantly restores 100 HP.' },
@@ -254,6 +294,8 @@ export const INITIAL_SKILLS: ForgedSkill[] = [
     maxStages: 15,
     isForged: false,
     isCorrupted: false,
+    synergyTags: ['Unique', 'spatial', 'gravity', 'singularity'],
+    relatedSkillIds: ['void-drift', 'temporal-echo'],
     stages: [
       { stage: 1, name: 'Gravity Tether', description: 'Increases gravitational pull on a single target, weighing them down.', manaMultiplier: 1.0, effect: 'Reduces target agility by 50% and grounds airborne enemies.' },
       { stage: 5, name: 'Singularity Vortex', description: 'Spawns a black sphere that drags all enemies within 12 meters to its center.', manaMultiplier: 2.5, effect: 'Disrupts all enemy movement and channels continuous kinetic crushing damage.' },
@@ -278,6 +320,8 @@ export const INITIAL_SKILLS: ForgedSkill[] = [
     maxStages: 15,
     isForged: false,
     isCorrupted: false,
+    synergyTags: ['Body', 'barrier', 'defense', 'protection'],
+    relatedSkillIds: ['basic-regeneration'],
     stages: [
       { stage: 1, name: 'Hexagonal Shield', description: 'Deploys a barrier absorbing up to 150 points of incoming damage.', manaMultiplier: 1.0, effect: 'Absorbs physical and elemental attacks for 10 seconds.' },
       { stage: 5, name: 'Reflective Aegis', description: 'Rebound elemental spells back at hostile casters.', manaMultiplier: 2.0, effect: 'Reflects 30% of incoming spell damage back to the attacker.' },
@@ -302,6 +346,8 @@ export const INITIAL_SKILLS: ForgedSkill[] = [
     maxStages: 15,
     isForged: false,
     isCorrupted: false,
+    synergyTags: ['Forbidden', 'Unique', 'time', 'spatial', 'chrono'],
+    relatedSkillIds: ['void-drift', 'gravity-well'],
     stages: [
       { stage: 1, name: 'Tactical Rewind', description: 'Rewinds position and HP by 1.5 seconds upon receiving severe damage.', manaMultiplier: 1.0, effect: 'Recovers 40% of damage taken in the last 2 seconds.' },
       { stage: 5, name: 'Chrono-Acceleration (Haste)', description: 'Accelerates Aryan\'s personal time stream by 200%.', manaMultiplier: 2.8, effect: 'Doubles attack speed and casting speed for 6 seconds.' },
@@ -326,6 +372,8 @@ export const INITIAL_SKILLS: ForgedSkill[] = [
     maxStages: 15,
     isForged: false,
     isCorrupted: true,
+    synergyTags: ['Corrupted', 'abyssal', 'blood', 'demon', 'curse'],
+    relatedSkillIds: ['predator-instinct'],
     corruptedDetails: {
       signature: 'Blood Monarch Elizabeth / Abyssal Sanguine Archon',
       origin: 'Forged from corrupted vampire bat demon remains deep within the Catacombs of Niflheim.',
@@ -340,4 +388,5 @@ export const INITIAL_SKILLS: ForgedSkill[] = [
     ],
   },
 ];
+
 

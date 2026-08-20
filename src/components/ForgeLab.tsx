@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { CharacterStats, ForgedSkill, TTSVoice } from '../types';
+import { CharacterStats, ForgedSkill, TTSVoice, getSkillEvolutionCrystalCost } from '../types';
 import { SoundFX } from '../utils/soundEffects';
 import { fetchTTSAudio, playAudioUrl, stopAllAudio, narrateText } from '../services/ttsService';
 import { SkillEvolutionGraph } from './SkillEvolutionGraph';
+import { calculateActiveSynergies, getSkillSynergyMultiplier, calculateCombatPower } from '../utils/synergy';
 import {
   Hammer,
   Zap,
@@ -23,6 +24,9 @@ import {
   RefreshCw,
   GitBranch,
   Network,
+  Sword,
+  Link,
+  FlameKindling,
 } from 'lucide-react';
 
 interface ForgeLabProps {
@@ -49,8 +53,140 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [forgeSuccessMsg, setForgeSuccessMsg] = useState<string | null>(null);
   const [isSpeakingResult, setIsSpeakingResult] = useState(false);
+  const [evolutionTab, setEvolutionTab] = useState<'crystals' | 'synthesis'>('crystals');
+  const [selectedDonorSkillIds, setSelectedDonorSkillIds] = useState<string[]>([]);
 
   const selectedSkill = skills.find((s) => s.id === selectedSkillId) || skills[0];
+
+  // Active Synergies calculation
+  const allSynergies = calculateActiveSynergies(skills);
+  const activeSynergies = allSynergies.filter((s) => s.isActive);
+  const totalPowerMultiplier = activeSynergies.reduce((acc, syn) => acc * syn.multiplier, 1.0);
+  const combatPower = calculateCombatPower(stats, skills, allSynergies);
+  const selectedSkillMultiplier = selectedSkill ? getSkillSynergyMultiplier(selectedSkill, allSynergies).totalMultiplier : 1.0;
+
+  // Evolve skill using Mana Crystals
+  const handleEvolveWithCrystals = (skill: ForgedSkill) => {
+    if (skill.currentStage >= skill.maxStages) return;
+    const cost = getSkillEvolutionCrystalCost(skill);
+    const currentCrystals = stats.manaCrystals || 0;
+
+    if (currentCrystals < cost) {
+      alert(
+        `INSUFFICIENT MANA CRYSTALS!\n\nEvolution to Stage ${skill.currentStage + 1} requires ${cost} Mana Crystals, but Aryan only holds ${currentCrystals} Crystals.\n\nDefeat monsters in the Encounter Arena and harvest their corpses to obtain more Mana Crystals.`
+      );
+      return;
+    }
+
+    SoundFX.playCrystalPulse();
+    setTimeout(() => SoundFX.playSkillForged(), 300);
+
+    // Deduct crystals
+    onUpdateStats({
+      ...stats,
+      manaCrystals: currentCrystals - cost,
+    });
+
+    const nextStageNum = skill.currentStage + 1;
+    const stageObj = skill.stages.find((st) => st.stage === nextStageNum) || {
+      stage: nextStageNum,
+      name: `Enhanced Resonance Tier ${nextStageNum}`,
+      effect: `Multiplies skill power by ${(1 + nextStageNum * 0.35).toFixed(1)}x; expands soul matrix resonance.`,
+      description: `Deepened soul engraving at stage ${nextStageNum}.`,
+      manaMultiplier: 1 + nextStageNum * 0.35,
+    };
+
+    const updatedSkills = skills.map((s) => {
+      if (s.id === skill.id) {
+        const existingStages = [...s.stages];
+        if (!existingStages.some((st) => st.stage === nextStageNum)) {
+          existingStages.push(stageObj);
+          existingStages.sort((a, b) => a.stage - b.stage);
+        }
+        return {
+          ...s,
+          currentStage: nextStageNum,
+          stages: existingStages,
+        };
+      }
+      return s;
+    });
+
+    onUpdateSkills(updatedSkills);
+    setForgeSuccessMsg(
+      `[FORGER EVOLUTION] — Infused ${cost} Mana Crystals into "${skill.name}"! Successfully evolved to Stage ${nextStageNum}: ${stageObj.name}!`
+    );
+    setTimeout(() => setForgeSuccessMsg(null), 6000);
+  };
+
+  // Evolve skill using Two Related Skills (Dual Synthesis)
+  const handleEvolveWithRelatedSkills = (targetSkill: ForgedSkill) => {
+    if (selectedDonorSkillIds.length !== 2) {
+      alert('Please select exactly TWO related skills to synthesize and force the breakthrough evolution.');
+      return;
+    }
+
+    if (targetSkill.currentStage >= targetSkill.maxStages) return;
+
+    const donorA = skills.find((s) => s.id === selectedDonorSkillIds[0]);
+    const donorB = skills.find((s) => s.id === selectedDonorSkillIds[1]);
+
+    if (!donorA || !donorB) return;
+
+    SoundFX.playSkillForged();
+
+    const nextStageNum = targetSkill.currentStage + 1;
+    const shortA = donorA.name.split(' ')[0];
+    const shortB = donorB.name.split(' ')[0];
+    const stageObj = targetSkill.stages.find((st) => st.stage === nextStageNum) || {
+      stage: nextStageNum,
+      name: `Dual-Resonance: ${shortA} & ${shortB} Fusion`,
+      effect: `Harmonizes dual matrices; boosts skill multiplier by ${(1 + nextStageNum * 0.4).toFixed(1)}x`,
+      description: `Synthesized through the harmonic resonance of ${donorA.name} and ${donorB.name}.`,
+      manaMultiplier: 1 + nextStageNum * 0.4,
+    };
+
+    const updatedSkills = skills.map((s) => {
+      if (s.id === targetSkill.id) {
+        const existingStages = [...s.stages];
+        if (!existingStages.some((st) => st.stage === nextStageNum)) {
+          existingStages.push(stageObj);
+          existingStages.sort((a, b) => a.stage - b.stage);
+        }
+        const existingTags = s.synergyTags || [];
+        const newTags = Array.from(
+          new Set([...existingTags, ...(donorA.synergyTags || []), ...(donorB.synergyTags || [])])
+        );
+        return {
+          ...s,
+          currentStage: nextStageNum,
+          stages: existingStages,
+          synergyTags: newTags,
+        };
+      }
+      return s;
+    });
+
+    onUpdateSkills(updatedSkills);
+    setSelectedDonorSkillIds([]);
+    setForgeSuccessMsg(
+      `[MATRIX SYNTHESIS BREAKTHROUGH] — Harmonized "${donorA.name}" and "${donorB.name}" into "${targetSkill.name}"! Forced stage breakthrough to Stage ${nextStageNum} (${stageObj.name}) without consuming Mana Crystals!`
+    );
+    setTimeout(() => setForgeSuccessMsg(null), 6000);
+  };
+
+  const handleToggleDonorSkill = (skillId: string) => {
+    SoundFX.playSystemNotification();
+    if (selectedDonorSkillIds.includes(skillId)) {
+      setSelectedDonorSkillIds(selectedDonorSkillIds.filter((id) => id !== skillId));
+    } else {
+      if (selectedDonorSkillIds.length >= 2) {
+        setSelectedDonorSkillIds([selectedDonorSkillIds[0], skillId]);
+      } else {
+        setSelectedDonorSkillIds([...selectedDonorSkillIds, skillId]);
+      }
+    }
+  };
 
   // Dissolve/Unbind a forged skill matrix to reclaim permanent mana into the wellspring
   const handleDissolveSkill = (skill: ForgedSkill) => {
@@ -104,20 +240,6 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
       `[UNIQUE SKILL: FORGER] — "${skill.name}" successfully engraved! Bound ${skill.permanentManaCost} Permanent MP into your soul matrix.`
     );
     setTimeout(() => setForgeSuccessMsg(null), 5000);
-  };
-
-  // Evolve skill stage
-  const handleEvolveSkill = (skillId: string) => {
-    const target = skills.find((s) => s.id === skillId);
-    if (!target) return;
-
-    const nextStage = Math.min(target.maxStages, target.currentStage + 1);
-    SoundFX.playSkillForged();
-
-    const updated = skills.map((s) =>
-      s.id === skillId ? { ...s, currentStage: nextStage } : s
-    );
-    onUpdateSkills(updated);
   };
 
   // Run AI Skill Deconstruction via Gemini
@@ -322,6 +444,19 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
               </div>
             </div>
 
+            {/* Mana Crystals Stockpile */}
+            <div className="text-right border-l border-[#1a1a1a] pl-6">
+              <div className="flex items-center justify-end space-x-1 text-[10px] font-mono uppercase tracking-[0.2em] text-amber-400 font-bold">
+                <Sparkles className="w-3 h-3 text-amber-400" />
+                <span>MANA CRYSTALS</span>
+              </div>
+              <div className="text-2xl font-bold font-mono text-amber-300 mt-0.5 flex items-baseline justify-end space-x-1">
+                <span>{stats.manaCrystals || 0}</span>
+                <span className="text-xs text-amber-500/80 font-normal">💎</span>
+              </div>
+              <div className="text-[9px] font-mono text-amber-400/80 mt-1">Harvested from Arena</div>
+            </div>
+
             <div className="text-right border-l border-[#1a1a1a] pl-6">
               <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-slate-500">CORE INTEGRITY</div>
               <div className="text-2xl font-bold font-mono text-white mt-0.5">
@@ -374,6 +509,68 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
             >
               Test Drain (-15 MP)
             </button>
+          </div>
+        </div>
+
+        {/* Active Synergy Resonance Multipliers Banner */}
+        <div className="mt-4 p-4 rounded-lg bg-[#070b12] border border-cyan-900/50 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-cyan-950 pb-2.5">
+            <div className="flex items-center space-x-2">
+              <Link className="w-4 h-4 text-cyan-400" />
+              <span className="font-mono text-xs font-bold uppercase tracking-wider text-cyan-200">
+                Active Skill Synergy Multiplier Matrix
+              </span>
+              <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">
+                {activeSynergies.length} Active Multipliers
+              </span>
+            </div>
+
+            <div className="flex items-center space-x-3 text-xs font-mono">
+              <span className="text-slate-400">
+                Resonance Boost: <span className="text-emerald-400 font-bold">+{Math.round((totalPowerMultiplier - 1) * 100)}% Power</span>
+              </span>
+              <span className="text-slate-400">
+                Combat Rating: <span className="text-amber-400 font-bold">{combatPower} CP</span>
+              </span>
+            </div>
+          </div>
+
+          <p className="text-[11px] text-slate-400 font-sans leading-relaxed">
+            Equipping two or more related skills weaves a synergistic mana resonance across your soul matrix, granting massive passive combat multipliers to all interconnected abilities.
+          </p>
+
+          {/* Active / Pending Synergy Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
+            {activeSynergies.map((syn) => (
+              <div
+                key={syn.synergy.id}
+                className="p-2.5 rounded bg-[#04111d] border border-cyan-500/40 text-xs font-mono space-y-1.5 shadow-[0_0_10px_rgba(6,182,212,0.1)]"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-cyan-300 truncate">{syn.synergy.name}</span>
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 font-bold border border-emerald-800">
+                    +{Math.round((syn.multiplier - 1) * 100)}% Boost
+                  </span>
+                </div>
+                <div className="text-[10px] text-slate-300 font-sans line-clamp-1">{syn.synergy.description}</div>
+                <div className="flex flex-wrap gap-1 pt-1 border-t border-cyan-950/80">
+                  {syn.matchingSkills.map((sk) => (
+                    <span
+                      key={sk.id}
+                      className="text-[9px] px-1.5 py-0.2 rounded bg-cyan-950/80 text-cyan-200 border border-cyan-800/60"
+                    >
+                      {sk.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            {activeSynergies.length === 0 && (
+              <div className="col-span-full p-3 rounded bg-[#0a0a0a] border border-[#222] text-xs font-mono text-slate-400 flex items-center justify-between">
+                <span>⚡ No multi-skill synergies active yet. Forge related skills (e.g. Fireball + Glacial Spike or Mana Shield + Titan Aegis) to unlock multiplier resonance!</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -459,7 +656,10 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
             skills={skills}
             selectedSkillId={selectedSkillId}
             onSelectSkill={(id) => setSelectedSkillId(id)}
-            onEvolveSkill={(id) => handleEvolveSkill(id)}
+            onEvolveSkill={(id) => {
+              const target = skills.find((s) => s.id === id);
+              if (target) handleEvolveWithCrystals(target);
+            }}
             onForgeSkill={(skill) => handleForgeSkill(skill)}
             permanentMana={stats.permanentMana}
           />
@@ -481,6 +681,9 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
           <div className="space-y-2">
             {skills.map((skill) => {
               const isSelected = skill.id === selectedSkillId;
+              const { totalMultiplier: skillMult } = getSkillSynergyMultiplier(skill, allSynergies);
+              const hasSynergyBoost = skill.isForged && skillMult > 1.0;
+
               return (
                 <button
                   key={skill.id}
@@ -505,12 +708,17 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
                       ) : (
                         <Zap className="w-3.5 h-3.5 text-cyan-400" />
                       )}
-                      <span className="font-mono text-xs font-bold truncate max-w-[140px] text-white">
+                      <span className="font-mono text-xs font-bold truncate max-w-[130px] text-white">
                         {skill.name}
                       </span>
                     </div>
 
                     <div className="flex items-center space-x-1.5">
+                      {hasSynergyBoost && (
+                        <span className="font-mono text-[9px] px-1 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold flex items-center space-x-0.5">
+                          <span>+{Math.round((skillMult - 1) * 100)}%</span>
+                        </span>
+                      )}
                       <span
                         className={`font-mono text-[9px] px-1.5 py-0.5 rounded ${
                           skill.isForged
@@ -703,16 +911,6 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
                         <span className="uppercase text-[10px] tracking-wider">Channel Spell</span>
                       </button>
 
-                      {selectedSkill.currentStage < selectedSkill.maxStages && (
-                        <button
-                          onClick={() => handleEvolveSkill(selectedSkill.id)}
-                          className="px-3 py-1.5 rounded bg-white text-black text-xs font-mono font-bold flex items-center space-x-1.5 hover:bg-slate-200 transition"
-                        >
-                          <TrendingUp className="w-3.5 h-3.5" />
-                          <span className="uppercase text-[10px] tracking-wider">Evolve (Stage {selectedSkill.currentStage + 1})</span>
-                        </button>
-                      )}
-
                       {selectedSkill.id !== 'forger-core' && (
                         <button
                           onClick={() => handleDissolveSkill(selectedSkill)}
@@ -740,24 +938,102 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
                 </div>
               </div>
 
-              {/* Strategic Choice Notice per Skill */}
-              <div className="mb-4 px-3.5 py-2 rounded bg-[#0d0d0d] border border-[#222] text-xs font-mono flex items-center justify-between">
-                <span className="text-slate-400">
-                  {selectedSkill.isForged ? (
-                    <span className="text-purple-300 font-medium">
-                      ★ Active Soul Matrix: Permanently reserving {selectedSkill.permanentManaCost} MP of Aryan's total mana wellspring.
-                    </span>
-                  ) : (
-                    <span className="text-slate-400">
-                      ★ Unforged Blueprint: Forging will reserve {selectedSkill.permanentManaCost} MP from Aryan's regenerating wellspring cap.
-                    </span>
-                  )}
-                </span>
+              {/* Strategic Choice Notice & Synergy Multiplier Boost */}
+              <div className="mb-4 space-y-2">
+                <div className="px-3.5 py-2 rounded bg-[#0d0d0d] border border-[#222] text-xs font-mono flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-slate-400">
+                    {selectedSkill.isForged ? (
+                      <span className="text-purple-300 font-medium">
+                        ★ Active Soul Matrix: Permanently reserving {selectedSkill.permanentManaCost} MP of Aryan's total mana wellspring.
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">
+                        ★ Unforged Blueprint: Forging will reserve {selectedSkill.permanentManaCost} MP from Aryan's regenerating wellspring cap.
+                      </span>
+                    )}
+                  </span>
 
-                <span className="text-[10px] uppercase font-bold text-slate-500">
-                  Active Spell Cost: {selectedSkill.activeManaCost} MP
-                </span>
+                  <span className="text-[10px] uppercase font-bold text-slate-500">
+                    Active Spell Cost: {selectedSkill.activeManaCost} MP
+                  </span>
+                </div>
+
+                {/* Skill Synergy Multiplier Status */}
+                <div className="px-3.5 py-2.5 rounded bg-[#07131b] border border-cyan-900/60 text-xs font-mono flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center space-x-2">
+                    <Zap className="w-3.5 h-3.5 text-cyan-400" />
+                    <span className="text-slate-300">
+                      Synergy Resonance Multiplier:
+                    </span>
+                    <span className={`font-bold ${selectedSkillMultiplier > 1 ? 'text-emerald-400' : 'text-slate-400'}`}>
+                      {selectedSkillMultiplier.toFixed(2)}x ({selectedSkillMultiplier > 1 ? `+${Math.round((selectedSkillMultiplier - 1) * 100)}% Boost` : '1.0x Base'})
+                    </span>
+                  </div>
+
+                  <div className="flex items-center space-x-1">
+                    {selectedSkill.synergyTags?.map((tag) => (
+                      <span
+                        key={tag}
+                        className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800 uppercase"
+                      >
+                        #{tag}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               </div>
+
+              {/* Related Skills & Multiplier Pairing Suggestions */}
+              {selectedSkill.relatedSkillIds && selectedSkill.relatedSkillIds.length > 0 && (
+                <div className="mb-4 p-3.5 rounded bg-[#090909] border border-[#1f1f1f] space-y-2">
+                  <div className="flex items-center justify-between text-[11px] font-mono text-slate-400 font-bold uppercase tracking-wider">
+                    <div className="flex items-center space-x-1.5">
+                      <Link className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Related Skills & Synergy Pairs (Equip 2+ for Bonus Multiplier)</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-normal">
+                      Click skill to inspect
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                    {selectedSkill.relatedSkillIds.map((relId) => {
+                      const relSkill = skills.find((s) => s.id === relId);
+                      if (!relSkill) return null;
+
+                      const isPairForged = relSkill.isForged;
+                      return (
+                        <button
+                          key={relSkill.id}
+                          onClick={() => {
+                            SoundFX.playSystemNotification();
+                            setSelectedSkillId(relSkill.id);
+                          }}
+                          className={`p-2 rounded border text-left flex items-center justify-between transition ${
+                            isPairForged
+                              ? 'bg-cyan-950/30 border-cyan-700/60 text-cyan-200 hover:border-cyan-500'
+                              : 'bg-[#0f0f0f] border-[#222] text-slate-400 hover:border-slate-600'
+                          }`}
+                        >
+                          <div className="truncate pr-2 font-mono text-xs">
+                            <div className="font-semibold text-white truncate">{relSkill.name}</div>
+                            <div className="text-[9px] text-slate-400">{relSkill.publicRank}-Rank</div>
+                          </div>
+                          <span
+                            className={`text-[9px] px-1.5 py-0.5 rounded font-mono uppercase shrink-0 ${
+                              isPairForged
+                                ? 'bg-cyan-900 text-cyan-200 font-bold'
+                                : 'bg-[#1a1a1a] text-slate-500 border border-[#2a2a2a]'
+                            }`}
+                          >
+                            {isPairForged ? 'Equipped' : 'Not Forged'}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Description */}
               <p className="text-slate-300 text-sm font-sans leading-relaxed mb-6">
@@ -803,6 +1079,221 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
                   </div>
                 )}
               </div>
+
+              {/* DEDICATED EVOLUTION BREAKTHROUGH CHAMBER */}
+              {selectedSkill.isForged && (
+                <div className="mb-6 p-5 rounded-lg bg-[#0b0c10] border border-cyan-800/50 shadow-[0_0_20px_rgba(34,211,238,0.06)] space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-3">
+                    <div className="flex items-center space-x-2">
+                      <TrendingUp className="w-5 h-5 text-cyan-400" />
+                      <div>
+                        <h4 className="text-sm font-mono font-bold text-white uppercase tracking-wider">
+                          Evolution Breakthrough Chamber
+                        </h4>
+                        <span className="text-[11px] font-mono text-cyan-300">
+                          Target: <span className="text-white font-bold">{selectedSkill.name}</span> (Current: Stage {selectedSkill.currentStage} / {selectedSkill.maxStages})
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-2 bg-black/60 px-3 py-1.5 rounded border border-amber-500/40">
+                      <Sparkles className="w-4 h-4 text-amber-400" />
+                      <span className="text-xs font-mono text-amber-300 font-bold">
+                        {stats.manaCrystals || 0} 💎 Crystals Available
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Dual Evolution Pathway Switcher */}
+                  <div className="flex rounded bg-black/60 p-1 border border-white/10">
+                    <button
+                      onClick={() => {
+                        SoundFX.playSystemNotification();
+                        setEvolutionTab('crystals');
+                      }}
+                      className={`flex-1 py-2 px-3 rounded font-mono text-xs font-bold transition flex items-center justify-center space-x-2 ${
+                        evolutionTab === 'crystals'
+                          ? 'bg-amber-950/80 text-amber-300 border border-amber-500/60 shadow-[0_0_10px_rgba(245,158,11,0.2)]'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Pathway A: Mana Crystal Infusion</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        SoundFX.playSystemNotification();
+                        setEvolutionTab('synthesis');
+                      }}
+                      className={`flex-1 py-2 px-3 rounded font-mono text-xs font-bold transition flex items-center justify-center space-x-2 ${
+                        evolutionTab === 'synthesis'
+                          ? 'bg-purple-950/80 text-purple-300 border border-purple-500/60 shadow-[0_0_10px_rgba(168,85,247,0.2)]'
+                          : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <Link className="w-3.5 h-3.5 text-purple-400" />
+                      <span>Pathway B: Dual-Skill Matrix Synthesis (2 Related Skills)</span>
+                    </button>
+                  </div>
+
+                  {/* PATHWAY A: MANA CRYSTALS */}
+                  {evolutionTab === 'crystals' && (
+                    <div className="space-y-4 font-mono text-xs">
+                      {selectedSkill.currentStage >= selectedSkill.maxStages ? (
+                        <div className="p-4 rounded bg-emerald-950/40 border border-emerald-500/50 text-emerald-300 text-center font-bold">
+                          ✨ MAXIMUM SOVEREIGN STAGE ACHIEVED ({selectedSkill.maxStages}/{selectedSkill.maxStages})
+                        </div>
+                      ) : (
+                        <>
+                          {(() => {
+                            const cost = getSkillEvolutionCrystalCost(selectedSkill);
+                            const hasEnough = (stats.manaCrystals || 0) >= cost;
+                            const nextStage = selectedSkill.stages.find((s) => s.stage === selectedSkill.currentStage + 1);
+
+                            return (
+                              <div className="space-y-3">
+                                <div className="p-3.5 rounded bg-black/40 border border-white/10 flex flex-wrap items-center justify-between gap-3">
+                                  <div>
+                                    <div className="text-slate-400 text-[11px]">Upcoming Stage {selectedSkill.currentStage + 1}:</div>
+                                    <div className="text-white font-bold text-sm mt-0.5">
+                                      {nextStage ? nextStage.name : `Enhanced Resonance Tier ${selectedSkill.currentStage + 1}`}
+                                    </div>
+                                    <div className="text-cyan-300 text-xs font-sans mt-1">
+                                      Effect: {nextStage ? nextStage.effect : `Multiplies skill power by ${(1 + (selectedSkill.currentStage + 1) * 0.35).toFixed(1)}x`}
+                                    </div>
+                                  </div>
+
+                                  <div className="text-right">
+                                    <span className="text-[10px] uppercase text-slate-400 block">Required Infusion:</span>
+                                    <span className="text-base font-bold text-amber-300">
+                                      {cost} 💎 Crystals
+                                    </span>
+                                    <span className={`block text-[10px] font-semibold mt-0.5 ${hasEnough ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                      {hasEnough ? '✓ Crystals Ready' : `✗ Need ${cost - (stats.manaCrystals || 0)} More`}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <button
+                                  onClick={() => handleEvolveWithCrystals(selectedSkill)}
+                                  disabled={!hasEnough}
+                                  className={`w-full py-3 rounded font-mono text-xs uppercase font-bold tracking-wider transition flex items-center justify-center space-x-2 ${
+                                    hasEnough
+                                      ? 'bg-amber-400 text-black hover:bg-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.4)] cursor-pointer'
+                                      : 'bg-slate-800/80 text-slate-500 border border-slate-700/50 cursor-not-allowed'
+                                  }`}
+                                >
+                                  <Sparkles className="w-4 h-4" />
+                                  <span>
+                                    Infuse {cost} Mana Crystals & Evolve to Stage {selectedSkill.currentStage + 1}
+                                  </span>
+                                </button>
+
+                                {!hasEnough && (
+                                  <p className="text-[11px] font-sans text-amber-400/90 text-center">
+                                    Harvest additional Mana Crystals from defeated monster corpses in the <strong>Encounter Arena</strong>.
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {/* PATHWAY B: DUAL-SKILL SYNTHESIS */}
+                  {evolutionTab === 'synthesis' && (
+                    <div className="space-y-4 font-mono text-xs">
+                      {selectedSkill.currentStage >= selectedSkill.maxStages ? (
+                        <div className="p-4 rounded bg-emerald-950/40 border border-emerald-500/50 text-emerald-300 text-center font-bold">
+                          ✨ MAXIMUM SOVEREIGN STAGE ACHIEVED ({selectedSkill.maxStages}/{selectedSkill.maxStages})
+                        </div>
+                      ) : (
+                        <>
+                          <div className="p-3 rounded bg-purple-950/30 border border-purple-800/50 text-purple-200 text-xs">
+                            <p className="font-sans">
+                              Select <strong>TWO related skills</strong> from your inventory below. Aryan will harness their harmonic matrix resonance to force a breakthrough evolution on <strong>{selectedSkill.name}</strong> to <strong>Stage {selectedSkill.currentStage + 1}</strong> without spending Mana Crystals!
+                            </p>
+                          </div>
+
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between text-[11px] text-slate-400">
+                              <span>Select 2 Donor / Related Skills:</span>
+                              <span className="font-bold text-purple-300">
+                                {selectedDonorSkillIds.length}/2 Selected
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto p-1 bg-black/40 rounded border border-white/10">
+                              {skills
+                                .filter((s) => s.id !== selectedSkill.id)
+                                .map((s) => {
+                                  const isSelected = selectedDonorSkillIds.includes(s.id);
+                                  const isRelated = s.synergyTags?.some((tag) => selectedSkill.synergyTags?.includes(tag));
+
+                                  return (
+                                    <div
+                                      key={s.id}
+                                      onClick={() => handleToggleDonorSkill(s.id)}
+                                      className={`p-2 rounded border cursor-pointer transition flex items-center justify-between ${
+                                        isSelected
+                                          ? 'bg-purple-950/80 border-purple-500 text-white shadow-[0_0_8px_rgba(168,85,247,0.3)]'
+                                          : isRelated
+                                          ? 'bg-[#120d18] border-purple-900/50 text-slate-300 hover:border-purple-600/70'
+                                          : 'bg-[#0a0a0a] border-[#222] text-slate-400 hover:border-slate-600'
+                                      }`}
+                                    >
+                                      <div className="flex items-center space-x-2 truncate">
+                                        <div
+                                          className={`w-3.5 h-3.5 rounded border flex items-center justify-center ${
+                                            isSelected ? 'border-purple-400 bg-purple-600 text-white' : 'border-slate-600'
+                                          }`}
+                                        >
+                                          {isSelected && <span className="text-[10px] leading-none">✓</span>}
+                                        </div>
+                                        <div className="truncate">
+                                          <div className="font-bold text-xs truncate">{s.name}</div>
+                                          <div className="text-[10px] text-slate-500 truncate">
+                                            Stage {s.currentStage} • {s.tier}
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {isRelated && (
+                                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-900/60 text-purple-300 border border-purple-700 shrink-0 ml-1">
+                                          Related
+                                        </span>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={() => handleEvolveWithRelatedSkills(selectedSkill)}
+                            disabled={selectedDonorSkillIds.length !== 2}
+                            className={`w-full py-3 rounded font-mono text-xs uppercase font-bold tracking-wider transition flex items-center justify-center space-x-2 ${
+                              selectedDonorSkillIds.length === 2
+                                ? 'bg-purple-600 text-white hover:bg-purple-500 shadow-[0_0_15px_rgba(168,85,247,0.4)] cursor-pointer'
+                                : 'bg-slate-800/80 text-slate-500 border border-slate-700/50 cursor-not-allowed'
+                            }`}
+                          >
+                            <Link className="w-4 h-4" />
+                            <span>
+                              {selectedDonorSkillIds.length === 2
+                                ? `Synthesize 2 Related Skills -> Breakthrough to Stage ${selectedSkill.currentStage + 1}`
+                                : `Select 2 Skills to Synthesize (${selectedDonorSkillIds.length}/2 Selected)`}
+                            </span>
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* 15-Stage Evolution Progression Tree */}
               <div className="space-y-3">

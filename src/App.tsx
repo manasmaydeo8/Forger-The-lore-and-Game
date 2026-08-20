@@ -3,22 +3,26 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { STORY_SECTIONS } from './data/storyData';
 import { INITIAL_ARYAN_STATS, INITIAL_SKILLS } from './data/skillsData';
-import { StorySectionId, TTSVoice, CharacterStats, ForgedSkill } from './types';
+import { StorySectionId, TTSVoice, CharacterStats, ForgedSkill, SaveSlotData } from './types';
 import { SoundFX } from './utils/soundEffects';
 import { isAudioPlaying, stopAllAudio } from './services/ttsService';
+import { saveSlot, loadSlot, getLatestSave } from './utils/saveManager';
 
 import { Navbar } from './components/Navbar';
 import { CinematicViewer } from './components/CinematicViewer';
 import { NovelReader } from './components/NovelReader';
 import { ForgeLab } from './components/ForgeLab';
+import { ArenaCombat } from './components/ArenaCombat';
 import { CharacterCodex } from './components/CharacterCodex';
 import { TTSPlayerBar } from './components/TTSPlayerBar';
+import { SaveManagerModal } from './components/SaveManagerModal';
+import { Check, Sparkles, Zap } from 'lucide-react';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'cinematic' | 'reader' | 'forge' | 'codex'>('cinematic');
+  const [activeTab, setActiveTab] = useState<'cinematic' | 'reader' | 'forge' | 'arena' | 'codex'>('cinematic');
   const [currentSectionId, setCurrentSectionId] = useState<StorySectionId>('prologue-world');
   const [selectedVoice, setSelectedVoice] = useState<TTSVoice>('Fenrir');
   const [isAmbientActive, setIsAmbientActive] = useState(false);
@@ -27,6 +31,99 @@ export default function App() {
 
   const [stats, setStats] = useState<CharacterStats>(INITIAL_ARYAN_STATS);
   const [skills, setSkills] = useState<ForgedSkill[]>(INITIAL_SKILLS);
+
+  // Save System UI States
+  const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
+  const [lastSavedText, setLastSavedText] = useState<string | null>(null);
+  const [saveToast, setSaveToast] = useState<{ message: string; type: 'save' | 'load' | 'auto' } | null>(null);
+  const isInitialMount = useRef(true);
+
+  // On first load, check if previous save exists and restore
+  useEffect(() => {
+    try {
+      const latest = getLatestSave();
+      if (latest && latest.stats && latest.skills) {
+        setStats(latest.stats);
+        setSkills(latest.skills);
+        if (latest.currentSectionId) setCurrentSectionId(latest.currentSectionId);
+        if (latest.activeTab) setActiveTab(latest.activeTab);
+        if (latest.selectedVoice) setSelectedVoice(latest.selectedVoice);
+        setLastSavedText('Restored');
+        setSaveToast({ message: `Chronicle restored from previous session (${latest.label})`, type: 'load' });
+        setTimeout(() => setSaveToast(null), 3500);
+      }
+    } catch (e) {
+      console.warn('Could not auto-restore save', e);
+    }
+  }, []);
+
+  // Debounced Auto-Save
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      const saved = saveSlot({
+        id: 'autosave',
+        label: 'Chronicle Auto-Save',
+        stats,
+        skills,
+        currentSectionId,
+        activeTab,
+        selectedVoice,
+      });
+
+      if (saved) {
+        setLastSavedText('Auto-saved');
+        setSaveToast({ message: 'Chronicle progression auto-saved', type: 'auto' });
+        setTimeout(() => setSaveToast(null), 2500);
+      }
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [stats, skills, currentSectionId, activeTab, selectedVoice]);
+
+  const handleQuickSave = () => {
+    SoundFX.playSkillForged();
+    const saved = saveSlot({
+      id: 'quicksave',
+      label: 'Quick Save Matrix',
+      stats,
+      skills,
+      currentSectionId,
+      activeTab,
+      selectedVoice,
+    });
+
+    if (saved) {
+      setLastSavedText('Quick-saved');
+      setSaveToast({ message: '⚡ Quick Save recorded successfully!', type: 'save' });
+      setTimeout(() => setSaveToast(null), 3000);
+    }
+  };
+
+  const handleLoadSaveData = (data: SaveSlotData) => {
+    setStats(data.stats);
+    setSkills(data.skills);
+    setCurrentSectionId(data.currentSectionId);
+    setActiveTab(data.activeTab || 'cinematic');
+    if (data.selectedVoice) setSelectedVoice(data.selectedVoice);
+    setLastSavedText('Loaded');
+    setSaveToast({ message: `Loaded: ${data.label}`, type: 'load' });
+    setTimeout(() => setSaveToast(null), 3500);
+  };
+
+  const handleResetGameData = () => {
+    setStats(INITIAL_ARYAN_STATS);
+    setSkills(INITIAL_SKILLS);
+    setCurrentSectionId('prologue-world');
+    setActiveTab('cinematic');
+    setLastSavedText(null);
+    setSaveToast({ message: 'Progress reset to Chapter 1 baseline', type: 'auto' });
+    setTimeout(() => setSaveToast(null), 3000);
+  };
 
   const currentSection =
     STORY_SECTIONS.find((s) => s.id === currentSectionId) || STORY_SECTIONS[0];
@@ -162,6 +259,9 @@ export default function App() {
         isLoadingTTS={isLoadingTTS}
         onStopTTS={handleStopAllTTS}
         stats={stats}
+        onOpenSaveModal={() => setIsSaveModalOpen(true)}
+        onQuickSave={handleQuickSave}
+        lastSavedText={lastSavedText}
       />
 
       {/* Main Content Area */}
@@ -202,15 +302,65 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'arena' && (
+          <ArenaCombat
+            stats={stats}
+            onUpdateStats={setStats}
+            skills={skills}
+            onUpdateSkills={setSkills}
+            onLevelUp={handleLevelUp}
+            voice={selectedVoice}
+          />
+        )}
+
         {activeTab === 'codex' && (
           <CharacterCodex
             stats={stats}
             onUpdateStats={setStats}
+            skills={skills}
+            onUpdateSkills={setSkills}
             onLevelUp={handleLevelUp}
             voice={selectedVoice}
           />
         )}
       </main>
+
+      {/* Save Manager Modal */}
+      <SaveManagerModal
+        isOpen={isSaveModalOpen}
+        onClose={() => setIsSaveModalOpen(false)}
+        stats={stats}
+        skills={skills}
+        currentSectionId={currentSectionId}
+        activeTab={activeTab}
+        selectedVoice={selectedVoice}
+        onLoadSave={handleLoadSaveData}
+        onResetGame={handleResetGameData}
+      />
+
+      {/* Floating Save Toast Notification */}
+      {saveToast && (
+        <div className="fixed bottom-6 right-6 z-50 animate-in fade-in slide-in-from-bottom-3 duration-200">
+          <div
+            className={`px-4 py-2.5 rounded-lg shadow-2xl border text-xs font-mono flex items-center space-x-2.5 backdrop-blur-md ${
+              saveToast.type === 'load'
+                ? 'bg-purple-950/90 border-purple-600 text-purple-200 shadow-[0_0_20px_rgba(168,85,247,0.3)]'
+                : saveToast.type === 'save'
+                ? 'bg-cyan-950/90 border-cyan-500 text-cyan-200 shadow-[0_0_20px_rgba(6,182,212,0.3)]'
+                : 'bg-[#121218]/90 border-slate-700 text-slate-300 shadow-[0_0_15px_rgba(0,0,0,0.5)]'
+            }`}
+          >
+            {saveToast.type === 'load' ? (
+              <Sparkles className="w-4 h-4 text-purple-400 flex-shrink-0" />
+            ) : saveToast.type === 'save' ? (
+              <Zap className="w-4 h-4 text-cyan-400 flex-shrink-0" />
+            ) : (
+              <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+            )}
+            <span>{saveToast.message}</span>
+          </div>
+        </div>
+      )}
 
       {/* Floating Persistent TTS Player Indicator when active */}
       {isPlayingTTS && (

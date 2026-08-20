@@ -15,11 +15,14 @@ import {
   Radio,
   Zap,
   RotateCw,
+  Sword,
+  Save,
+  Check,
 } from 'lucide-react';
 
 interface NavbarProps {
-  activeTab: 'cinematic' | 'reader' | 'forge' | 'codex';
-  setActiveTab: (tab: 'cinematic' | 'reader' | 'forge' | 'codex') => void;
+  activeTab: 'cinematic' | 'reader' | 'forge' | 'arena' | 'codex';
+  setActiveTab: (tab: 'cinematic' | 'reader' | 'forge' | 'arena' | 'codex') => void;
   currentSectionId: StorySectionId;
   onSelectSection: (id: StorySectionId) => void;
   selectedVoice: TTSVoice;
@@ -30,6 +33,9 @@ interface NavbarProps {
   isLoadingTTS: boolean;
   onStopTTS: () => void;
   stats?: CharacterStats;
+  onOpenSaveModal?: () => void;
+  onQuickSave?: () => void;
+  lastSavedText?: string | null;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -45,6 +51,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   isLoadingTTS,
   onStopTTS,
   stats,
+  onOpenSaveModal,
+  onQuickSave,
+  lastSavedText,
 }) => {
   const [showSectionDropdown, setShowSectionDropdown] = useState(false);
   const [showVoiceDropdown, setShowVoiceDropdown] = useState(false);
@@ -140,6 +149,22 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           <button
+            id="nav-tab-arena"
+            onClick={() => {
+              SoundFX.playFireballIgnition();
+              setActiveTab('arena');
+            }}
+            className={`flex items-center space-x-2 px-3 py-1.5 rounded transition ${
+              activeTab === 'arena'
+                ? 'bg-purple-950/80 text-purple-200 border border-purple-600 shadow-[0_0_12px_rgba(168,85,247,0.2)] font-semibold'
+                : 'text-purple-400/80 hover:text-purple-200'
+            }`}
+          >
+            <Sword className="w-3.5 h-3.5 text-purple-400" />
+            <span className="tracking-wide">Arena Combat</span>
+          </button>
+
+          <button
             id="nav-tab-codex"
             onClick={() => {
               SoundFX.playSystemNotification();
@@ -158,41 +183,62 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Live Aryan Mana & Innate Wellspring HUD */}
         {stats && (
-          <div
-            onClick={() => {
-              SoundFX.playSystemNotification();
-              setActiveTab('codex');
-            }}
-            title={`Aryan's Permanent Mana Pool: ${stats.permanentMana}/${stats.maxPermanentMana} MP. Innate Replenishment: ${
-              isManaUnderCapacity ? 'Autonomously recovering +' + stats.innateSkill.replenishRate + ' MP/tick' : 'Capacity full'
-            }`}
-            className="cursor-pointer group flex items-center space-x-2.5 px-3 py-1.5 rounded bg-[#0d0d0d] border border-[#222] hover:border-cyan-500/50 transition font-mono text-xs"
-          >
-            <div className="flex items-center space-x-1.5">
-              <Zap className={`w-3.5 h-3.5 ${isManaUnderCapacity ? 'text-cyan-400 animate-pulse' : 'text-cyan-500'}`} />
-              <span className="text-[10px] uppercase text-slate-400 tracking-wider font-semibold">MP</span>
+          <div className="flex items-center space-x-2">
+            {/* Mana Pool */}
+            <div
+              onClick={() => {
+                SoundFX.playSystemNotification();
+                setActiveTab('codex');
+              }}
+              title={`Aryan's Permanent Mana Pool: ${stats.permanentMana}/${stats.maxPermanentMana} MP. Innate Replenishment: ${
+                isManaUnderCapacity ? 'Autonomously recovering +' + stats.innateSkill.replenishRate + ' MP/tick' : 'Capacity full'
+              }`}
+              className="cursor-pointer group flex items-center space-x-2.5 px-3 py-1.5 rounded bg-[#0d0d0d] border border-[#222] hover:border-cyan-500/50 transition font-mono text-xs"
+            >
+              <div className="flex items-center space-x-1.5">
+                <Zap className={`w-3.5 h-3.5 ${isManaUnderCapacity ? 'text-cyan-400 animate-pulse' : 'text-cyan-500'}`} />
+                <span className="text-[10px] uppercase text-slate-400 tracking-wider font-semibold">MP</span>
+              </div>
+
+              <div className="flex flex-col">
+                <div className="flex items-center justify-between space-x-1.5 text-[11px]">
+                  <span className="font-bold text-white group-hover:text-cyan-300 transition">
+                    {stats.permanentMana}
+                  </span>
+                  <span className="text-[10px] text-slate-500">/ {stats.maxPermanentMana}</span>
+                  {isManaUnderCapacity && (
+                    <span className="text-[9px] px-1 py-0.2 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-800 animate-pulse flex items-center space-x-0.5">
+                      <RotateCw className="w-2.5 h-2.5 animate-spin" />
+                      <span>+{stats.innateSkill.replenishRate}</span>
+                    </span>
+                  )}
+                </div>
+                <div className="w-14 h-1 bg-[#1a1a1a] rounded-full overflow-hidden mt-0.5">
+                  <div
+                    className={`h-full transition-all duration-300 ${
+                      isManaUnderCapacity ? 'bg-cyan-400 shadow-[0_0_6px_#22d3ee]' : 'bg-cyan-500'
+                    }`}
+                    style={{ width: `${Math.min(100, (stats.permanentMana / stats.maxPermanentMana) * 100)}%` }}
+                  />
+                </div>
+              </div>
             </div>
 
-            <div className="flex flex-col">
-              <div className="flex items-center justify-between space-x-1.5 text-[11px]">
-                <span className="font-bold text-white group-hover:text-cyan-300 transition">
-                  {stats.permanentMana}
+            {/* Mana Crystals Balance */}
+            <div
+              onClick={() => {
+                SoundFX.playCrystalPulse();
+                setActiveTab('forge');
+              }}
+              title={`Monster Mana Crystals: ${stats.manaCrystals || 0}. Harvested from Encounter Arena corpses. Used in Forge Lab to evolve skills.`}
+              className="cursor-pointer group flex items-center space-x-2 px-3 py-1.5 rounded bg-[#0d0d0d] border border-amber-900/40 hover:border-amber-500/70 transition font-mono text-xs shadow-[0_0_10px_rgba(245,158,11,0.05)]"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-400 group-hover:scale-110 transition-transform" />
+              <div className="flex items-baseline space-x-1">
+                <span className="font-bold text-amber-300 group-hover:text-amber-200 text-[11px]">
+                  {stats.manaCrystals || 0}
                 </span>
-                <span className="text-[10px] text-slate-500">/ {stats.maxPermanentMana}</span>
-                {isManaUnderCapacity && (
-                  <span className="text-[9px] px-1 py-0.2 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-800 animate-pulse flex items-center space-x-0.5">
-                    <RotateCw className="w-2.5 h-2.5 animate-spin" />
-                    <span>+{stats.innateSkill.replenishRate}</span>
-                  </span>
-                )}
-              </div>
-              <div className="w-16 h-1 bg-[#1a1a1a] rounded-full overflow-hidden mt-0.5">
-                <div
-                  className={`h-full transition-all duration-300 ${
-                    isManaUnderCapacity ? 'bg-cyan-400 shadow-[0_0_6px_#22d3ee]' : 'bg-cyan-500'
-                  }`}
-                  style={{ width: `${Math.min(100, (stats.permanentMana / stats.maxPermanentMana) * 100)}%` }}
-                />
+                <span className="text-[9px] text-amber-500/80 uppercase font-semibold">💎 Crystals</span>
               </div>
             </div>
           </div>
@@ -304,6 +350,42 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             {isAmbientActive ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
           </button>
+
+          {/* Save & Load Archive Matrix Button */}
+          {onOpenSaveModal && (
+            <div className="flex items-center space-x-1 pl-1 border-l border-slate-800">
+              <button
+                id="nav-save-matrix-btn"
+                onClick={() => {
+                  SoundFX.playMatrixPulse();
+                  onOpenSaveModal();
+                }}
+                title="Open Chronicle Save & Archive Matrix"
+                className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded bg-cyan-950/40 hover:bg-cyan-900/60 border border-cyan-800/60 hover:border-cyan-500/80 text-cyan-200 text-xs font-mono transition shadow-[0_0_10px_rgba(6,182,212,0.15)] group"
+              >
+                <Save className="w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition-transform" />
+                <span className="hidden sm:inline font-semibold text-[11px] tracking-wider">Save</span>
+                {lastSavedText && (
+                  <span className="hidden lg:inline text-[9px] text-cyan-400/70 font-sans">
+                    ({lastSavedText})
+                  </span>
+                )}
+              </button>
+
+              {onQuickSave && (
+                <button
+                  id="nav-quicksave-btn"
+                  onClick={() => {
+                    onQuickSave();
+                  }}
+                  title="Instant Quick Save"
+                  className="p-1.5 rounded bg-[#0e0e12] hover:bg-cyan-950 border border-slate-800 hover:border-cyan-700 text-slate-400 hover:text-cyan-300 text-xs font-mono transition"
+                >
+                  <Zap className="w-3.5 h-3.5 text-cyan-400" />
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </header>
