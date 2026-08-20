@@ -138,6 +138,32 @@ export const SoundFX = {
     }
   },
 
+  // Mana Replenishment pulse chime
+  playManaReplenish() {
+    try {
+      const ctx = getAudioContext();
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(520, now);
+      osc.frequency.exponentialRampToValueAtTime(784, now + 0.35); // E5 to G5
+
+      gain.gain.setValueAtTime(0.01, now);
+      gain.gain.linearRampToValueAtTime(0.12, now + 0.1);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(now);
+      osc.stop(now + 0.55);
+    } catch (e) {
+      console.warn('Audio FX failed:', e);
+    }
+  },
+
   // Skill Forging chime
   playSkillForged() {
     try {

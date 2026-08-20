@@ -39,6 +39,90 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // Calculate bound permanent mana, usable capacity, and dynamic strategic stance
+  const boundPermanentMana = skills
+    .filter((s) => s.isForged)
+    .reduce((acc, s) => acc + (s.permanentManaCost || 0), 0);
+  const usablePermanentManaCap = Math.max(0, stats.maxPermanentMana - boundPermanentMana);
+
+  const freeRatio = stats.maxPermanentMana > 0 ? usablePermanentManaCap / stats.maxPermanentMana : 1;
+  let strategicStance: 'Pure Wellspring' | 'Balanced Arsenal' | 'Overcharged Sovereign' | 'Soul Strain Hazard' = 'Pure Wellspring';
+  let dynamicRate = 3;
+  let dynamicInterval = 2.0;
+
+  if (freeRatio >= 0.65) {
+    strategicStance = 'Pure Wellspring';
+    dynamicRate = 4;
+    dynamicInterval = 1.5;
+  } else if (freeRatio >= 0.35) {
+    strategicStance = 'Balanced Arsenal';
+    dynamicRate = 3;
+    dynamicInterval = 2.0;
+  } else if (freeRatio >= 0.12) {
+    strategicStance = 'Overcharged Sovereign';
+    dynamicRate = 2;
+    dynamicInterval = 2.5;
+  } else {
+    strategicStance = 'Soul Strain Hazard';
+    dynamicRate = 1;
+    dynamicInterval = 3.5;
+  }
+
+  // Keep stats in sync with bound mana & usable cap
+  useEffect(() => {
+    setStats((prev) => {
+      const clampedPermanent = Math.min(prev.permanentMana, usablePermanentManaCap);
+      if (
+        prev.boundPermanentMana === boundPermanentMana &&
+        prev.usablePermanentManaCap === usablePermanentManaCap &&
+        prev.strategicStance === strategicStance &&
+        prev.permanentMana === clampedPermanent
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        boundPermanentMana,
+        usablePermanentManaCap,
+        strategicStance,
+        permanentMana: clampedPermanent,
+      };
+    });
+  }, [boundPermanentMana, usablePermanentManaCap, strategicStance]);
+
+  // Autonomic Mana Replenishment Loop (Aryan's Innate Skill: Primordial Mana Wellspring)
+  // Automatically increases Aryan's mana whenever it drops below its usable designated capacity
+  useEffect(() => {
+    const replenishIntervalMs = Math.round(dynamicInterval * 1000);
+    
+    const manaTimer = setInterval(() => {
+      setStats((prev) => {
+        const currentCap = prev.usablePermanentManaCap ?? usablePermanentManaCap;
+        const needsPermanentReplenish = prev.permanentMana < currentCap;
+        const needsActiveReplenish = prev.activeMana < prev.maxActiveMana;
+
+        if (!needsPermanentReplenish && !needsActiveReplenish) {
+          if (prev.isReplenishing) {
+            return { ...prev, isReplenishing: false };
+          }
+          return prev;
+        }
+
+        const newPermanent = Math.min(currentCap, prev.permanentMana + dynamicRate);
+        const newActive = Math.min(prev.maxActiveMana, prev.activeMana + dynamicRate);
+
+        return {
+          ...prev,
+          permanentMana: newPermanent,
+          activeMana: newActive,
+          isReplenishing: newPermanent < currentCap || newActive < prev.maxActiveMana,
+        };
+      });
+    }, replenishIntervalMs);
+
+    return () => clearInterval(manaTimer);
+  }, [dynamicInterval, dynamicRate, usablePermanentManaCap]);
+
   const handleToggleAmbient = () => {
     const newState = SoundFX.toggleAmbient();
     setIsAmbientActive(newState);
@@ -77,6 +161,7 @@ export default function App() {
         isPlayingTTS={isPlayingTTS}
         isLoadingTTS={isLoadingTTS}
         onStopTTS={handleStopAllTTS}
+        stats={stats}
       />
 
       {/* Main Content Area */}
@@ -120,6 +205,7 @@ export default function App() {
         {activeTab === 'codex' && (
           <CharacterCodex
             stats={stats}
+            onUpdateStats={setStats}
             onLevelUp={handleLevelUp}
             voice={selectedVoice}
           />

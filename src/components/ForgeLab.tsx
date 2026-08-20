@@ -52,41 +52,57 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
 
   const selectedSkill = skills.find((s) => s.id === selectedSkillId) || skills[0];
 
-  // Forge an existing known skill (e.g. Night Vision or Basic Regeneration)
+  // Dissolve/Unbind a forged skill matrix to reclaim permanent mana into the wellspring
+  const handleDissolveSkill = (skill: ForgedSkill) => {
+    if (!skill.isForged || skill.id === 'forger-core') return;
+
+    SoundFX.playSkillForged();
+    const updated = skills.map((s) =>
+      s.id === skill.id ? { ...s, isForged: false, currentStage: 1 } : s
+    );
+    onUpdateSkills(updated);
+
+    setForgeSuccessMsg(
+      `[SOUL DECONSTRUCTION] — Dissolved "${skill.name}". Reclaimed ${skill.permanentManaCost} Permanent Mana capacity back to your Innate Wellspring!`
+    );
+    setTimeout(() => setForgeSuccessMsg(null), 5000);
+  };
+
+  // Forge an existing known skill (e.g. Glacial Spike, Night Vision, etc.)
   const handleForgeSkill = (skill: ForgedSkill) => {
     if (skill.isForged) return;
 
-    if (stats.permanentMana < skill.permanentManaCost) {
-      alert('INSUFFICIENT PERMANENT MANA. Forging this skill would fracture your Mana Core!');
+    const availableCapacity = stats.usablePermanentManaCap ?? (stats.maxPermanentMana - (stats.boundPermanentMana || 0));
+    if (availableCapacity < skill.permanentManaCost) {
+      alert(
+        `INSUFFICIENT PERMANENT MANA CAPACITY!\n\nThis skill requires ${skill.permanentManaCost} MP, but your soul only has ${availableCapacity} MP unreserved capacity remaining.\n\nDissolve an existing skill or level up to expand your soul capacity.`
+      );
       return;
     }
 
     if (skill.isCorrupted) {
       SoundFX.playDemonicAnomaly();
       const confirmForge = window.confirm(
-        'WARNING: This skill has a CORRUPTED FOREIGN MANA SIGNATURE. Forging without purification may damage your Mana Core Integrity by 20%. Proceed anyway?'
+        'WARNING: This skill has a CORRUPTED FOREIGN MANA SIGNATURE. Forging without purification will permanently bind 18 MP and may damage your Mana Core Integrity by 20%. Proceed anyway?'
       );
       if (!confirmForge) return;
 
       const newIntegrity = Math.max(10, stats.manaCoreIntegrity - 20);
       onUpdateStats({
         ...stats,
-        permanentMana: stats.permanentMana - skill.permanentManaCost,
         manaCoreIntegrity: newIntegrity,
         statusEffects: [...stats.statusEffects, 'Demonic Mana Infiltration (Warning)'],
       });
     } else {
       SoundFX.playSkillForged();
-      onUpdateStats({
-        ...stats,
-        permanentMana: stats.permanentMana - skill.permanentManaCost,
-      });
     }
 
     const updated = skills.map((s) => (s.id === skill.id ? { ...s, isForged: true } : s));
     onUpdateSkills(updated);
 
-    setForgeSuccessMsg(`[UNIQUE SKILL: FORGER] — "${skill.name}" successfully bound to your soul!`);
+    setForgeSuccessMsg(
+      `[UNIQUE SKILL: FORGER] — "${skill.name}" successfully engraved! Bound ${skill.permanentManaCost} Permanent MP into your soul matrix.`
+    );
     setTimeout(() => setForgeSuccessMsg(null), 5000);
   };
 
@@ -145,8 +161,10 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
     if (!analyzedSkillResult) return;
 
     const cost = analyzedSkillResult.manaCostPermanent || 10;
-    if (stats.permanentMana < cost) {
-      setForgeSuccessMsg(`[SYSTEM ERROR] — Insufficient Permanent Mana! Need ${cost} MP.`);
+    const availableCapacity = stats.usablePermanentManaCap ?? (stats.maxPermanentMana - (stats.boundPermanentMana || 0));
+
+    if (availableCapacity < cost) {
+      setForgeSuccessMsg(`[SYSTEM ERROR] — Insufficient Permanent Mana Capacity! Need ${cost} MP unreserved (Have ${availableCapacity} MP).`);
       setTimeout(() => setForgeSuccessMsg(null), 4000);
       return;
     }
@@ -159,7 +177,7 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
       category: analyzedSkillResult.corruptionDetected ? 'Corrupted' : 'Unique',
       permanentManaCost: cost,
       activeManaCost: analyzedSkillResult.activeManaCost || 5,
-      description: customSkillDesc || 'Forged through the Scholar\'s Comprehension.',
+      description: analyzedSkillResult.description || customSkillDesc || 'Forged through the Scholar\'s Comprehension.',
       magicalStructure: analyzedSkillResult.magicalStructure || 'Custom Elemental Matrix',
       manaFlow: analyzedSkillResult.manaFlow || 'Direct Soul Channeling',
       ignitionPhase: analyzedSkillResult.ignitionPhase,
@@ -178,18 +196,13 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
     };
 
     SoundFX.playSkillForged();
-    onUpdateStats({
-      ...stats,
-      permanentMana: stats.permanentMana - cost,
-    });
-
     onUpdateSkills([...skills, newSkill]);
     setSelectedSkillId(newSkill.id);
     setAnalyzedSkillResult(null);
     setCustomSkillName('');
     setCustomSkillDesc('');
 
-    setForgeSuccessMsg(`[FORGER SYSTEM] — Successfully synthesized "${newSkill.name}"!`);
+    setForgeSuccessMsg(`[FORGER SYSTEM] — Successfully synthesized "${newSkill.name}"! Permanently bound ${cost} MP to maintain matrix.`);
     setTimeout(() => setForgeSuccessMsg(null), 5000);
   };
 
@@ -234,31 +247,134 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
             </div>
           </div>
 
-          {/* Quick Mana Gauge */}
-          <div className="flex items-center space-x-8">
+          {/* Strategic Mana Capacity & Innate Wellspring HUD */}
+          <div className="flex flex-wrap items-center gap-6">
             <div className="text-right">
-              <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-slate-500">PERMANENT MANA POOL</div>
-              <div className="text-2xl font-bold font-mono text-white flex items-center justify-end space-x-1.5 mt-0.5">
-                <span>{stats.permanentMana}</span>
-                <span className="text-xs text-slate-500 font-normal">/ {stats.maxPermanentMana} MP</span>
+              <div className="flex items-center justify-end space-x-1.5 text-[10px] font-mono uppercase tracking-[0.2em] text-slate-400">
+                <Zap className="w-3.5 h-3.5 text-cyan-400" />
+                <span>SOUL MANA EQUILIBRIUM</span>
+              </div>
+              
+              <div className="flex items-baseline justify-end space-x-2 mt-0.5 font-mono">
+                <span className="text-2xl font-bold text-white">
+                  {stats.permanentMana}
+                </span>
+                <span className="text-xs text-slate-400">
+                  / {stats.usablePermanentManaCap ?? (stats.maxPermanentMana - (stats.boundPermanentMana || 0))} MP usable cap
+                </span>
+                <span className="text-[11px] text-purple-400/90 font-medium">
+                  ({stats.boundPermanentMana || 0} MP Bound)
+                </span>
+              </div>
+
+              {/* Multi-segment Soul Mana Bar */}
+              <div className="w-64 h-2 bg-[#151515] rounded-full overflow-hidden border border-[#222] mt-1.5 flex">
+                {/* Active usable mana */}
+                <div
+                  className="bg-cyan-400 h-full transition-all duration-300 shadow-[0_0_8px_rgba(34,211,238,0.6)]"
+                  style={{ width: `${Math.min(100, (stats.permanentMana / stats.maxPermanentMana) * 100)}%` }}
+                />
+                {/* Unfilled Wellspring Room */}
+                <div
+                  className="bg-cyan-950/60 h-full transition-all duration-300"
+                  style={{
+                    width: `${Math.max(
+                      0,
+                      (((stats.usablePermanentManaCap ?? (stats.maxPermanentMana - (stats.boundPermanentMana || 0))) - stats.permanentMana) /
+                        stats.maxPermanentMana) *
+                        100
+                    )}%`,
+                  }}
+                />
+                {/* Bound Permanent Mana */}
+                <div
+                  className="bg-purple-600 h-full transition-all duration-300 shadow-[0_0_6px_rgba(168,85,247,0.4)]"
+                  style={{ width: `${Math.min(100, ((stats.boundPermanentMana || 0) / stats.maxPermanentMana) * 100)}%` }}
+                  title={`${stats.boundPermanentMana || 0} MP permanently allocated to sustain forged skill matrices`}
+                />
+              </div>
+
+              {/* Autonomic Replenishment & Strategic Stance status */}
+              <div className="mt-2 flex items-center justify-end space-x-2">
+                <span className={`inline-flex items-center space-x-1 text-[9px] font-mono px-2 py-0.5 rounded border uppercase tracking-wider ${
+                  stats.strategicStance === 'Pure Wellspring'
+                    ? 'bg-cyan-950/80 text-cyan-300 border-cyan-700/80'
+                    : stats.strategicStance === 'Balanced Arsenal'
+                    ? 'bg-blue-950/80 text-blue-300 border-blue-700/80'
+                    : stats.strategicStance === 'Overcharged Sovereign'
+                    ? 'bg-amber-950/80 text-amber-300 border-amber-700/80'
+                    : 'bg-rose-950/80 text-rose-300 border-rose-700/80'
+                }`}>
+                  <span>Stance: {stats.strategicStance || 'Pure Wellspring'}</span>
+                </span>
+
+                {stats.permanentMana < (stats.usablePermanentManaCap ?? stats.maxPermanentMana) ? (
+                  <span className="inline-flex items-center space-x-1 text-[9px] font-mono px-2 py-0.5 rounded bg-cyan-950/70 text-cyan-300 border border-cyan-800/80 animate-pulse">
+                    <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                    <span>Innate Wellspring Siphoning</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center space-x-1 text-[9px] font-mono px-2 py-0.5 rounded bg-[#111] text-slate-400 border border-[#222]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_4px_#34d399]" />
+                    <span>Cap Reached</span>
+                  </span>
+                )}
               </div>
             </div>
 
-            <div className="text-right">
+            <div className="text-right border-l border-[#1a1a1a] pl-6">
               <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-slate-500">CORE INTEGRITY</div>
               <div className="text-2xl font-bold font-mono text-white mt-0.5">
                 {stats.manaCoreIntegrity}%
               </div>
+              <div className="text-[10px] font-mono text-emerald-400 mt-1">SOUL STABLE</div>
             </div>
           </div>
         </div>
 
-        {/* Permanent Mana Warning Notice */}
-        <div className="flex items-start space-x-2.5 text-xs font-mono bg-[#0d0d0d] p-3 rounded border border-[#222] text-slate-400">
-          <Info className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
-          <p>
-            <span className="text-white font-bold tracking-wide">Law of Soul Forging:</span> Every skill forged binds directly to Aryan's soul core, consuming permanent Mana. If Mana drops to zero, the Mana Core collapses.
-          </p>
+        {/* Permanent Mana Strategic Choice & Innate Passive Highlight */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs font-mono">
+          <div className="flex items-start space-x-2.5 bg-[#0d0d0d] p-3.5 rounded border border-[#222] text-slate-300">
+            <Info className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+            <div>
+              <p>
+                <span className="text-white font-bold tracking-wide">Strategic Forging Choice:</span> Forging skills permanently binds soul mana into active matrices, lowering your Innate Wellspring's maximum replenishment ceiling.
+              </p>
+              <p className="text-[11px] text-slate-400 mt-1">
+                Preserving unreserved Mana accelerates autonomic recovery and grants deeper spellcasting reserves.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between bg-[#071318] p-3.5 rounded border border-cyan-900/60 text-cyan-200">
+            <div className="flex items-center space-x-2">
+              <Sparkles className="w-4 h-4 text-cyan-400 shrink-0" />
+              <div>
+                <div className="font-bold text-[11px] uppercase tracking-wider text-white">
+                  Innate Skill: Primordial Wellspring
+                </div>
+                <div className="text-[10px] text-cyan-300/90">
+                  Autonomously restores mana up to <span className="font-bold text-white">{stats.usablePermanentManaCap ?? (stats.maxPermanentMana - (stats.boundPermanentMana || 0))} MP</span> (Current: {stats.permanentMana} MP).
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                if (stats.permanentMana > 15) {
+                  SoundFX.playFireballIgnition();
+                  onUpdateStats({
+                    ...stats,
+                    permanentMana: Math.max(0, stats.permanentMana - 15),
+                  });
+                }
+              }}
+              title="Test Mana Replenishment: Expends 15 MP to watch Aryan's innate skill automatically restore it over time."
+              className="px-2.5 py-1.5 rounded bg-cyan-900/60 hover:bg-cyan-800 text-cyan-200 border border-cyan-700/60 text-[10px] uppercase font-bold tracking-wider transition shrink-0 ml-2"
+            >
+              Test Drain (-15 MP)
+            </button>
+          </div>
         </div>
 
         {/* Success Alert */}
@@ -570,7 +686,7 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
                   </p>
                 </div>
 
-                <div className="flex items-center space-x-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {selectedSkill.isForged ? (
                     <div className="flex items-center space-x-2">
                       <button
@@ -596,17 +712,51 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
                           <span className="uppercase text-[10px] tracking-wider">Evolve (Stage {selectedSkill.currentStage + 1})</span>
                         </button>
                       )}
+
+                      {selectedSkill.id !== 'forger-core' && (
+                        <button
+                          onClick={() => handleDissolveSkill(selectedSkill)}
+                          title={`Dissolve matrix to unbind ${selectedSkill.permanentManaCost} MP and return capacity to your Innate Wellspring`}
+                          className="px-3 py-1.5 rounded bg-purple-950/40 hover:bg-purple-900/60 text-purple-300 border border-purple-800/60 text-xs font-mono flex items-center space-x-1.5 transition"
+                        >
+                          <RefreshCw className="w-3 h-3 text-purple-400" />
+                          <span className="uppercase text-[10px] tracking-wider font-semibold">
+                            Dissolve Matrix (+{selectedSkill.permanentManaCost} MP Cap)
+                          </span>
+                        </button>
+                      )}
                     </div>
                   ) : (
-                    <button
-                      onClick={() => handleForgeSkill(selectedSkill)}
-                      className="px-5 py-2 rounded bg-white text-black font-mono text-xs font-bold uppercase tracking-wider hover:bg-slate-200 shadow-lg flex items-center space-x-2 transition"
-                    >
-                      <Hammer className="w-4 h-4" />
-                      <span>Forge Skill ({selectedSkill.permanentManaCost} MP)</span>
-                    </button>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => handleForgeSkill(selectedSkill)}
+                        className="px-5 py-2 rounded bg-white text-black font-mono text-xs font-bold uppercase tracking-wider hover:bg-slate-200 shadow-lg flex items-center space-x-2 transition"
+                      >
+                        <Hammer className="w-4 h-4" />
+                        <span>Forge & Bind ({selectedSkill.permanentManaCost} Perm MP)</span>
+                      </button>
+                    </div>
                   )}
                 </div>
+              </div>
+
+              {/* Strategic Choice Notice per Skill */}
+              <div className="mb-4 px-3.5 py-2 rounded bg-[#0d0d0d] border border-[#222] text-xs font-mono flex items-center justify-between">
+                <span className="text-slate-400">
+                  {selectedSkill.isForged ? (
+                    <span className="text-purple-300 font-medium">
+                      ★ Active Soul Matrix: Permanently reserving {selectedSkill.permanentManaCost} MP of Aryan's total mana wellspring.
+                    </span>
+                  ) : (
+                    <span className="text-slate-400">
+                      ★ Unforged Blueprint: Forging will reserve {selectedSkill.permanentManaCost} MP from Aryan's regenerating wellspring cap.
+                    </span>
+                  )}
+                </span>
+
+                <span className="text-[10px] uppercase font-bold text-slate-500">
+                  Active Spell Cost: {selectedSkill.activeManaCost} MP
+                </span>
               </div>
 
               {/* Description */}

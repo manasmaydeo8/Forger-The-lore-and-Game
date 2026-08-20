@@ -70,6 +70,18 @@ export interface ForgedSkill {
   };
 }
 
+export interface InnateSkill {
+  id: string;
+  name: string;
+  tier: string;
+  type: 'Innate Passive' | 'Soul Sovereign' | 'Primordial Core';
+  description: string;
+  replenishRate: number; // Mana replenished per tick
+  replenishInterval: number; // Seconds per tick
+  isActive: boolean;
+  loreSnippet: string;
+}
+
 export interface CharacterStats {
   name: string;
   title: string;
@@ -81,12 +93,17 @@ export interface CharacterStats {
   agility: number;
   defense: number;
   intelligence: number;
-  permanentMana: number;
-  maxPermanentMana: number;
+  permanentMana: number; // Current unspent / usable mana
+  maxPermanentMana: number; // Total soul capacity (e.g. 100 MP)
+  boundPermanentMana?: number; // Mana locked into forged skill matrices
+  usablePermanentManaCap?: number; // (maxPermanentMana - boundPermanentMana)
+  strategicStance?: 'Pure Wellspring' | 'Balanced Arsenal' | 'Overcharged Sovereign' | 'Soul Strain Hazard';
   activeMana: number;
   maxActiveMana: number;
   manaCoreIntegrity: number; // percentage
   statusEffects: string[];
+  innateSkill: InnateSkill;
+  isReplenishing?: boolean;
 }
 
 export type TTSVoice = 'Fenrir' | 'Zephyr' | 'Charon' | 'Kore' | 'Puck';

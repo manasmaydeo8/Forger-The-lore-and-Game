@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { STORY_SECTIONS } from '../data/storyData';
-import { StorySectionId, TTSVoice } from '../types';
+import { StorySectionId, TTSVoice, CharacterStats } from '../types';
 import { SoundFX } from '../utils/soundEffects';
 import {
   Sparkles,
@@ -13,6 +13,8 @@ import {
   Mic,
   ChevronDown,
   Radio,
+  Zap,
+  RotateCw,
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -27,6 +29,7 @@ interface NavbarProps {
   isPlayingTTS: boolean;
   isLoadingTTS: boolean;
   onStopTTS: () => void;
+  stats?: CharacterStats;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -41,11 +44,13 @@ export const Navbar: React.FC<NavbarProps> = ({
   isPlayingTTS,
   isLoadingTTS,
   onStopTTS,
+  stats,
 }) => {
   const [showSectionDropdown, setShowSectionDropdown] = useState(false);
   const [showVoiceDropdown, setShowVoiceDropdown] = useState(false);
 
   const currentSection = STORY_SECTIONS.find((s) => s.id === currentSectionId) || STORY_SECTIONS[0];
+  const isManaUnderCapacity = stats && stats.permanentMana < stats.maxPermanentMana;
 
   const voices: { id: TTSVoice; label: string; desc: string }[] = [
     { id: 'Fenrir', label: 'Fenrir', desc: 'Deep & Solemn (Recommended)' },
@@ -150,6 +155,48 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span className="tracking-wide">Codex & Stats</span>
           </button>
         </nav>
+
+        {/* Live Aryan Mana & Innate Wellspring HUD */}
+        {stats && (
+          <div
+            onClick={() => {
+              SoundFX.playSystemNotification();
+              setActiveTab('codex');
+            }}
+            title={`Aryan's Permanent Mana Pool: ${stats.permanentMana}/${stats.maxPermanentMana} MP. Innate Replenishment: ${
+              isManaUnderCapacity ? 'Autonomously recovering +' + stats.innateSkill.replenishRate + ' MP/tick' : 'Capacity full'
+            }`}
+            className="cursor-pointer group flex items-center space-x-2.5 px-3 py-1.5 rounded bg-[#0d0d0d] border border-[#222] hover:border-cyan-500/50 transition font-mono text-xs"
+          >
+            <div className="flex items-center space-x-1.5">
+              <Zap className={`w-3.5 h-3.5 ${isManaUnderCapacity ? 'text-cyan-400 animate-pulse' : 'text-cyan-500'}`} />
+              <span className="text-[10px] uppercase text-slate-400 tracking-wider font-semibold">MP</span>
+            </div>
+
+            <div className="flex flex-col">
+              <div className="flex items-center justify-between space-x-1.5 text-[11px]">
+                <span className="font-bold text-white group-hover:text-cyan-300 transition">
+                  {stats.permanentMana}
+                </span>
+                <span className="text-[10px] text-slate-500">/ {stats.maxPermanentMana}</span>
+                {isManaUnderCapacity && (
+                  <span className="text-[9px] px-1 py-0.2 rounded bg-cyan-950/80 text-cyan-300 border border-cyan-800 animate-pulse flex items-center space-x-0.5">
+                    <RotateCw className="w-2.5 h-2.5 animate-spin" />
+                    <span>+{stats.innateSkill.replenishRate}</span>
+                  </span>
+                )}
+              </div>
+              <div className="w-16 h-1 bg-[#1a1a1a] rounded-full overflow-hidden mt-0.5">
+                <div
+                  className={`h-full transition-all duration-300 ${
+                    isManaUnderCapacity ? 'bg-cyan-400 shadow-[0_0_6px_#22d3ee]' : 'bg-cyan-500'
+                  }`}
+                  style={{ width: `${Math.min(100, (stats.permanentMana / stats.maxPermanentMana) * 100)}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Actions / Chapter & TTS settings */}
         <div className="flex items-center space-x-2.5">
