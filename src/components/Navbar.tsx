@@ -18,11 +18,13 @@ import {
   Sword,
   Save,
   Check,
+  Globe,
+  Crown,
 } from 'lucide-react';
 
 interface NavbarProps {
-  activeTab: 'cinematic' | 'reader' | 'forge' | 'arena' | 'codex';
-  setActiveTab: (tab: 'cinematic' | 'reader' | 'forge' | 'arena' | 'codex') => void;
+  activeTab: 'cinematic' | 'reader' | 'forge' | 'arena' | 'codex' | 'multiplayer' | 'artifacts';
+  setActiveTab: (tab: 'cinematic' | 'reader' | 'forge' | 'arena' | 'codex' | 'multiplayer' | 'artifacts') => void;
   currentSectionId: StorySectionId;
   onSelectSection: (id: StorySectionId) => void;
   selectedVoice: TTSVoice;
@@ -178,6 +180,41 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <Shield className="w-3.5 h-3.5" />
             <span className="tracking-wide">Codex & Stats</span>
+          </button>
+
+          <button
+            id="nav-tab-artifacts"
+            onClick={() => {
+              SoundFX.playSkillForged();
+              setActiveTab('artifacts');
+            }}
+            className={`flex items-center space-x-2 px-3 py-1.5 rounded transition ${
+              activeTab === 'artifacts'
+                ? 'bg-pink-950/80 text-pink-200 border border-pink-500 shadow-[0_0_12px_rgba(244,63,94,0.3)] font-bold'
+                : 'text-pink-400/80 hover:text-pink-200'
+            }`}
+          >
+            <Crown className="w-3.5 h-3.5 text-pink-400" />
+            <span className="tracking-wide">Artifact Vault</span>
+          </button>
+
+          <button
+            id="nav-tab-multiplayer"
+            onClick={() => {
+              SoundFX.playSkillForged();
+              setActiveTab('multiplayer');
+            }}
+            className={`flex items-center space-x-2 px-3 py-1.5 rounded transition ${
+              activeTab === 'multiplayer'
+                ? 'bg-cyan-950/90 text-cyan-200 border border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.4)] font-bold animate-pulse'
+                : 'text-cyan-400/80 hover:text-cyan-200'
+            }`}
+          >
+            <Globe className="w-3.5 h-3.5 text-cyan-400" />
+            <span className="tracking-wide flex items-center gap-1.5">
+              Multiplayer Realm
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+            </span>
           </button>
         </nav>
 

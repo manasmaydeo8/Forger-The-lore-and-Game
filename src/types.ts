@@ -154,10 +154,181 @@ export interface CharacterStats {
   totalVoidCrystalsHarvested?: number;
   relicInventory?: UniqueLootItem[];
   equippedRelicIds?: string[];
+  artifactInventory?: ArtifactItem[];
+  equippedArtifactIds?: string[];
+  dailySkillForgingQuota?: DailySkillQuota;
   manaCoreIntegrity: number; // percentage
   statusEffects: string[];
   innateSkill: InnateSkill;
   isReplenishing?: boolean;
+}
+
+export type ArtifactRarity = 
+  | 'Common'
+  | 'Rare'
+  | 'Epic'
+  | 'Mysterious'
+  | 'Mythical'
+  | 'Legendary'
+  | 'Demonic'
+  | 'Divine'
+  | 'Mythical Divine';
+
+export type ArtifactSlotType = 'weapon' | 'armor' | 'ring' | 'amulet' | 'tome' | 'relic' | 'crown' | 'divine_core';
+
+export interface ArtifactItem {
+  id: string;
+  name: string;
+  rarity: ArtifactRarity;
+  slotType: ArtifactSlotType;
+  baseDropRate: number; // e.g. 0.0001 for Mythical Divine (0.0001%), 0.4999 for Divine, etc.
+  description: string;
+  lore: string;
+  icon: string;
+  statsBonus: {
+    maxHpBonus?: number;
+    permanentManaBonus?: number;
+    activeManaBonus?: number;
+    attackBonus?: number;
+    defenseBonus?: number;
+    agilityBonus?: number;
+    critChanceBonus?: number;
+    damageReductionBonus?: number;
+    crystalYieldMultiplier?: number;
+    pvpDamageMultiplier?: number;
+    bossDamageMultiplier?: number;
+  };
+  uniquePassiveName: string;
+  uniquePassiveEffect: string;
+  divineAuraColor?: string;
+  forgerRankRequirement?: string;
+  levelRequirement?: number;
+  acquiredAt?: number;
+  obtainedByPlayerName?: string;
+}
+
+export interface DailySkillQuota {
+  forgesUsedToday: number;
+  maxDailyForges: number; // 3 per day default
+  lastResetDate: string; // YYYY-MM-DD
+  nextResetTimestamp: number;
+}
+
+export interface SkillSafetyValidationResult {
+  isPermitted: boolean;
+  violationType?: 'ONE_SHOT' | 'INSTANT_KILL' | 'INFINITE_DAMAGE' | 'ILLEGAL_EXECUTION' | 'IMMORTALITY_LOCK';
+  violationReason?: string;
+  censoredPhrases?: string[];
+  sanitizedSuggestion?: string;
+}
+
+// Multiplayer Online Types
+export interface OnlinePlayer {
+  id: string;
+  username: string;
+  title: string;
+  level: number;
+  publicRank: string;
+  hp: number;
+  maxHp: number;
+  permanentMana: number;
+  activeMana: number;
+  equippedSkills: {
+    id: string;
+    name: string;
+    publicRank: string;
+    manaCost: number;
+    effectSnippet: string;
+  }[];
+  equippedArtifacts: {
+    id: string;
+    name: string;
+    rarity: ArtifactRarity;
+    passiveName: string;
+  }[];
+  pvpRating: number;
+  pvpWins: number;
+  pvpLosses: number;
+  status: 'idle' | 'in_queue' | 'in_pvp' | 'in_raid';
+  lastActive: number;
+  isHost?: boolean;
+}
+
+export interface ChatMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderTitle: string;
+  senderRank: string;
+  content: string;
+  timestamp: number;
+  type: 'global' | 'system' | 'pvp_alert' | 'mythical_drop' | 'raid_broadcast';
+  artifactData?: {
+    name: string;
+    rarity: ArtifactRarity;
+    icon: string;
+  };
+}
+
+export interface PvPDuelState {
+  duelId: string;
+  playerA: OnlinePlayer;
+  playerB: OnlinePlayer;
+  currentTurnPlayerId: string;
+  turnNumber: number;
+  timeRemainingSeconds: number;
+  winnerId: string | null;
+  status: 'starting' | 'active' | 'finished';
+  combatLog: {
+    turn: number;
+    attackerName: string;
+    defenderName: string;
+    skillName: string;
+    damageDealt: number;
+    isCritical: boolean;
+    effectDescription: string;
+    defenderHpRemaining: number;
+    defenderMpRemaining: number;
+    timestamp: number;
+  }[];
+}
+
+export interface WorldBossRaidState {
+  bossId: string;
+  name: string;
+  title: string;
+  currentHp: number;
+  maxHp: number;
+  phase: number;
+  enragedTimerSeconds: number;
+  isAlive: boolean;
+  participants: {
+    playerId: string;
+    playerName: string;
+    playerRank: string;
+    totalDamage: number;
+    dps: number;
+    isAlive: boolean;
+  }[];
+  recentAttacks: {
+    id: string;
+    playerName: string;
+    skillName: string;
+    damage: number;
+    isCrit: boolean;
+    timestamp: number;
+  }[];
+  bossSpecialAttack?: {
+    name: string;
+    description: string;
+    damageToAll: number;
+    warningCountdown: number;
+  } | null;
+  lootPool?: {
+    gold: number;
+    manaCrystals: number;
+    possibleArtifacts: ArtifactRarity[];
+  };
 }
 
 export interface EnemyAbility {

@@ -17,12 +17,14 @@ import { NovelReader } from './components/NovelReader';
 import { ForgeLab } from './components/ForgeLab';
 import { ArenaCombat } from './components/ArenaCombat';
 import { CharacterCodex } from './components/CharacterCodex';
+import { ArtifactVault } from './components/ArtifactVault';
+import { MultiplayerRealm } from './components/MultiplayerRealm';
 import { TTSPlayerBar } from './components/TTSPlayerBar';
 import { SaveManagerModal } from './components/SaveManagerModal';
 import { Check, Sparkles, Zap } from 'lucide-react';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'cinematic' | 'reader' | 'forge' | 'arena' | 'codex'>('cinematic');
+  const [activeTab, setActiveTab] = useState<'cinematic' | 'reader' | 'forge' | 'arena' | 'codex' | 'multiplayer' | 'artifacts'>('cinematic');
   const [currentSectionId, setCurrentSectionId] = useState<StorySectionId>('prologue-world');
   const [selectedVoice, setSelectedVoice] = useState<TTSVoice>('Fenrir');
   const [isAmbientActive, setIsAmbientActive] = useState(false);
@@ -320,6 +322,23 @@ export default function App() {
             skills={skills}
             onUpdateSkills={setSkills}
             onLevelUp={handleLevelUp}
+            voice={selectedVoice}
+          />
+        )}
+
+        {activeTab === 'artifacts' && (
+          <ArtifactVault
+            stats={stats}
+            onUpdateStats={setStats}
+            voice={selectedVoice}
+          />
+        )}
+
+        {activeTab === 'multiplayer' && (
+          <MultiplayerRealm
+            stats={stats}
+            onUpdateStats={setStats}
+            skills={skills}
             voice={selectedVoice}
           />
         )}

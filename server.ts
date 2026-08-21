@@ -75,10 +75,40 @@ function pcmToWavBase64(pcmBase64: string, sampleRate = 24000, numChannels = 1, 
   }
 }
 
+import http from 'http';
+import { WebSocketServer, WebSocket } from 'ws';
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: Date.now() });
 });
+
+// Anti-One-Shot / Anti-Instant-Kill Safety Validator
+const FORBIDDEN_ONE_SHOT_PATTERNS = [
+  /\b(one[\s-]?shot|1[\s-]?shot)\b/i,
+  /\b(instant[\s-]?kill|instakill|instantly\s+kill|instant\s+death)\b/i,
+  /\b(dies?\s+immediately|instantly\s+dies?|dies?\s+on\s+impact)\b/i,
+  /\b(guaranteed\s+kill|guaranteed\s+fatality|unavoidable\s+death)\b/i,
+  /\b(infinite\s+damage|inf\s+damage|999999\s+damage|infinity\s+damage)\b/i,
+  /\b(100%\s+(max\s+)?hp\s+(true\s+)?damage|100%\s+execute)\b/i,
+  /\b(erase[s]?\s+from\s+existence|eradicates?\s+soul\s+instantly)\b/i,
+  /\b(unblockable\s+lethal|fatal\s+one[\s-]?hit)\b/i,
+  /\b(kills?\s+(the\s+)?target\s+immediately)\b/i,
+];
+
+function checkSkillSafety(name: string, desc: string): { isPermitted: boolean; violationReason?: string; sanitizedSuggestion?: string } {
+  const combined = `${name} ${desc}`;
+  for (const pattern of FORBIDDEN_ONE_SHOT_PATTERNS) {
+    if (pattern.test(combined)) {
+      return {
+        isPermitted: false,
+        violationReason: 'CALAMITY PROTOCOL REJECTION: This formula contains prohibited One-Shot / Instant-Kill mechanics. The Laws of Aetheria strictly forbid fatal causality shortcuts in skill creation.',
+        sanitizedSuggestion: 'Reframe this skill around high burst elemental damage, armor shredding, crowd control, or damage over time instead of guaranteed instant death.',
+      };
+    }
+  }
+  return { isPermitted: true };
+}
 
 // Fallback procedural skill analyzer with rich archetypal engine for distinct, diverse skills
 function generateProceduralForgeAnalysis(skillName: string, description: string, userMana: number) {
@@ -493,10 +523,36 @@ app.post('/api/tts', async (req, res) => {
 app.post('/api/gemini/forge-analysis', async (req, res) => {
   const { skillName = 'Mystic Surge', description = '', userMana = 87 } = req.body;
 
+  // Anti-One-Shot & Anti-Instant-Kill Strict Gatekeeper
+  const safetyCheck = checkSkillSafety(skillName, description);
+  if (!safetyCheck.isPermitted) {
+    res.json({
+      skillName,
+      publicRank: 'F',
+      trueRank: 'PROHIBITED',
+      manaCostPermanent: 0,
+      activeManaCost: 0,
+      description: description,
+      magicalStructure: 'COLLAPSED — Fatality Paradox Singularity',
+      manaFlow: 'BLOCKED by Heavenly World Barrier',
+      ignitionPhase: 'DENIED',
+      compressionRatio: 'N/A',
+      stages: [],
+      corruptionDetected: true,
+      corruptionWarning: safetyCheck.violationReason,
+      prohibited: true,
+      violationReason: safetyCheck.violationReason,
+      sanitizedSuggestion: safetyCheck.sanitizedSuggestion,
+      systemLog: `[CALAMITY LAW ENFORCEMENT] Fatal One-Shot matrix rejected. Immediate death causality strikes are strictly forbidden in Aetheria.`,
+    });
+    return;
+  }
+
   const systemInstruction = `You are the mysterious Forger System Interface from the dark fantasy world of Aetheria.
 Aryan holds the Unique Skill [FORGER] (Public Rank F, True Rank Unknown).
 When analyzing a skill to forge:
 IMPORTANT: Every skill must have a totally unique, detailed lore description and bespoke evolutionary powers/effects with concrete numbers, damage types, status conditions, or utility mechanics. Never output generic template phrasing.
+STRICT RULE: You are STRICTLY FORBIDDEN from creating any instant-kill, one-shot, or 100% max HP fatality mechanics. All effects must have fair damage and status scaling.
 
 Provide structured analysis in JSON:
 {
@@ -529,6 +585,14 @@ Provide structured analysis in JSON:
     if (!parsed.description && description) {
       parsed.description = description;
     }
+    // Double check stages against one-shot keywords
+    const stagesText = (parsed.stages || []).map((s: any) => `${s.name} ${s.effect}`).join(' ');
+    const postSafetyCheck = checkSkillSafety(parsed.skillName || skillName, stagesText);
+    if (!postSafetyCheck.isPermitted) {
+      const proceduralFallback = generateProceduralForgeAnalysis(skillName, description, userMana);
+      res.json(proceduralFallback);
+      return;
+    }
     res.json(parsed);
   } catch (error: any) {
     console.warn('Gemini live generation unavailable, activating Forger procedural matrix fallback:', error?.message);
@@ -537,7 +601,497 @@ Provide structured analysis in JSON:
   }
 });
 
+// ============================================================================
+// REAL-TIME MULTIPLAYER ONLINE GAME ENGINE (WEBSOCKETS)
+// ============================================================================
+interface ConnectedClient {
+  ws: WebSocket;
+  id: string;
+  username: string;
+  title: string;
+  level: number;
+  publicRank: string;
+  hp: number;
+  maxHp: number;
+  permanentMana: number;
+  activeMana: number;
+  equippedSkills: any[];
+  equippedArtifacts: any[];
+  pvpRating: number;
+  pvpWins: number;
+  pvpLosses: number;
+  status: 'idle' | 'in_queue' | 'in_pvp' | 'in_raid';
+  lastPing: number;
+}
+
+const connectedClients = new Map<string, ConnectedClient>();
+const pvpQueue: string[] = []; // array of client IDs
+
+// Global World Boss State
+let worldBoss = {
+  bossId: 'calamity-void-dragon',
+  name: 'Void-Calamity Leviathan',
+  title: 'Cataclysmic Dragon Sovereign of the 9th Abyss',
+  currentHp: 80000,
+  maxHp: 80000,
+  phase: 1,
+  enragedTimerSeconds: 600,
+  isAlive: true,
+  participants: new Map<string, { playerId: string; playerName: string; playerRank: string; totalDamage: number; dps: number; isAlive: boolean }>(),
+  recentAttacks: [] as any[],
+  lastBossAttackTime: Date.now(),
+};
+
+// Periodic World Boss auto-attack and phase logic
+setInterval(() => {
+  if (!worldBoss.isAlive) {
+    // Respawn boss after 45 seconds of defeat
+    return;
+  }
+
+  // Boss attack rotation
+  const now = Date.now();
+  if (now - worldBoss.lastBossAttackTime > 6000 && connectedClients.size > 0) {
+    worldBoss.lastBossAttackTime = now;
+    const attacks = [
+      { name: 'Abyssal Void Roar', damage: 45, desc: 'Roars violently, shaking the spatial continuum.' },
+      { name: 'Dark Supernova Breath', damage: 85, desc: 'Breathes black stellar flames across all raiders.' },
+      { name: 'Calamity Tail Swipe', damage: 60, desc: 'Sweeps razor tail spikes across the raid circle.' },
+    ];
+    const attack = attacks[Math.floor(Math.random() * attacks.length)];
+
+    broadcast({
+      type: 'boss_attack',
+      data: {
+        attackName: attack.name,
+        damage: attack.damage,
+        description: attack.desc,
+        bossHp: worldBoss.currentHp,
+        bossMaxHp: worldBoss.maxHp,
+        phase: worldBoss.phase,
+      },
+    });
+  }
+}, 3000);
+
+function broadcast(message: any, excludeId?: string) {
+  const payload = JSON.stringify(message);
+  for (const [id, client] of connectedClients.entries()) {
+    if (excludeId && id === excludeId) continue;
+    if (client.ws.readyState === WebSocket.OPEN) {
+      client.ws.send(payload);
+    }
+  }
+}
+
+function getOnlinePlayersList() {
+  const list: any[] = [];
+  for (const client of connectedClients.values()) {
+    list.push({
+      id: client.id,
+      username: client.username,
+      title: client.title,
+      level: client.level,
+      publicRank: client.publicRank,
+      hp: client.hp,
+      maxHp: client.maxHp,
+      permanentMana: client.permanentMana,
+      activeMana: client.activeMana,
+      equippedSkills: client.equippedSkills,
+      equippedArtifacts: client.equippedArtifacts,
+      pvpRating: client.pvpRating,
+      pvpWins: client.pvpWins,
+      pvpLosses: client.pvpLosses,
+      status: client.status,
+      lastActive: client.lastPing,
+    });
+  }
+  return list;
+}
+
+function setupMultiplayerWebSockets(httpServer: http.Server) {
+  const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
+
+  wss.on('connection', (ws: WebSocket) => {
+    let clientId = `player_${Math.random().toString(36).substring(2, 9)}`;
+
+    const initialClient: ConnectedClient = {
+      ws,
+      id: clientId,
+      username: 'Aryan (Forger Vessel)',
+      title: 'Inheritor of the Secret Matrix',
+      level: 1,
+      publicRank: 'F',
+      hp: 100,
+      maxHp: 100,
+      permanentMana: 10,
+      activeMana: 50,
+      equippedSkills: [],
+      equippedArtifacts: [],
+      pvpRating: 1000,
+      pvpWins: 0,
+      pvpLosses: 0,
+      status: 'idle',
+      lastPing: Date.now(),
+    };
+
+    connectedClients.set(clientId, initialClient);
+
+    // Send welcome payload with full initial state
+    ws.send(
+      JSON.stringify({
+        type: 'init_realm',
+        data: {
+          yourId: clientId,
+          onlinePlayers: getOnlinePlayersList(),
+          worldBoss: {
+            ...worldBoss,
+            participants: Array.from(worldBoss.participants.values()),
+          },
+          serverTime: Date.now(),
+        },
+      })
+    );
+
+    // Broadcast new arrival
+    broadcast(
+      {
+        type: 'player_joined',
+        data: {
+          player: initialClient,
+          onlineCount: connectedClients.size,
+        },
+      },
+      clientId
+    );
+
+    ws.on('message', (raw: string) => {
+      try {
+        const msg = JSON.parse(raw.toString());
+        const client = connectedClients.get(clientId);
+        if (!client) return;
+
+        client.lastPing = Date.now();
+
+        switch (msg.type) {
+          case 'sync_player_profile': {
+            const { stats, equippedSkills = [], equippedArtifacts = [] } = msg.data || {};
+            if (stats) {
+              client.username = stats.name || client.username;
+              client.title = stats.title || client.title;
+              client.level = stats.level || client.level;
+              client.hp = stats.hp || client.hp;
+              client.maxHp = stats.maxHp || client.maxHp;
+              client.permanentMana = stats.permanentMana || client.permanentMana;
+              client.activeMana = stats.activeMana || client.activeMana;
+            }
+            client.equippedSkills = equippedSkills;
+            client.equippedArtifacts = equippedArtifacts;
+
+            // Broadcast profile update
+            broadcast({
+              type: 'player_updated',
+              data: {
+                player: {
+                  id: client.id,
+                  username: client.username,
+                  title: client.title,
+                  level: client.level,
+                  publicRank: client.publicRank,
+                  hp: client.hp,
+                  maxHp: client.maxHp,
+                  permanentMana: client.permanentMana,
+                  activeMana: client.activeMana,
+                  equippedSkills: client.equippedSkills,
+                  equippedArtifacts: client.equippedArtifacts,
+                  pvpRating: client.pvpRating,
+                  pvpWins: client.pvpWins,
+                  pvpLosses: client.pvpLosses,
+                  status: client.status,
+                  lastActive: client.lastPing,
+                },
+              },
+            });
+            break;
+          }
+
+          case 'send_chat': {
+            const { content } = msg.data || {};
+            if (!content || typeof content !== 'string') return;
+            const chatMsg = {
+              id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+              senderId: client.id,
+              senderName: client.username,
+              senderTitle: client.title,
+              senderRank: client.publicRank,
+              content: content.slice(0, 300),
+              timestamp: Date.now(),
+              type: 'global',
+            };
+            broadcast({ type: 'new_chat', data: chatMsg });
+            break;
+          }
+
+          case 'broadcast_artifact_drop': {
+            const { artifact } = msg.data || {};
+            if (!artifact) return;
+
+            const isApex = artifact.rarity === 'Mythical Divine' || artifact.rarity === 'Divine' || artifact.rarity === 'Demonic';
+            const alertMsg = {
+              id: `drop_${Date.now()}`,
+              senderId: client.id,
+              senderName: client.username,
+              senderTitle: client.title,
+              senderRank: client.publicRank,
+              content: `✨ ${client.username} has manifested the [${artifact.rarity}] Artifact: ${artifact.name}! (Drop Rate: ${artifact.baseDropRate}%)`,
+              timestamp: Date.now(),
+              type: isApex ? 'mythical_drop' : 'system',
+              artifactData: {
+                name: artifact.name,
+                rarity: artifact.rarity,
+                icon: artifact.icon,
+              },
+            };
+            broadcast({ type: 'new_chat', data: alertMsg });
+            break;
+          }
+
+          case 'raid_attack': {
+            const { damage = 50, skillName = 'Basic Mana Strike', isCrit = false } = msg.data || {};
+            if (!worldBoss.isAlive) return;
+
+            // Damage boss
+            const actualDmg = Math.min(Math.max(damage, 1), 3500); // capped for balance
+            worldBoss.currentHp = Math.max(0, worldBoss.currentHp - actualDmg);
+
+            // Update participant stats
+            const participant = worldBoss.participants.get(client.id) || {
+              playerId: client.id,
+              playerName: client.username,
+              playerRank: client.publicRank,
+              totalDamage: 0,
+              dps: 0,
+              isAlive: true,
+            };
+            participant.totalDamage += actualDmg;
+            worldBoss.participants.set(client.id, participant);
+
+            // Add to recent attacks
+            worldBoss.recentAttacks.unshift({
+              id: `atk_${Date.now()}`,
+              playerName: client.username,
+              skillName,
+              damage: actualDmg,
+              isCrit,
+              timestamp: Date.now(),
+            });
+            if (worldBoss.recentAttacks.length > 20) {
+              worldBoss.recentAttacks.pop();
+            }
+
+            // Phase transition check
+            if (worldBoss.currentHp <= worldBoss.maxHp * 0.3 && worldBoss.phase === 2) {
+              worldBoss.phase = 3;
+              broadcast({
+                type: 'boss_phase_change',
+                data: {
+                  phase: 3,
+                  message: '⚠️ Calamity Leviathan enters APEX ENRAGE PHASE! Mana currents turn volatile!',
+                },
+              });
+            } else if (worldBoss.currentHp <= worldBoss.maxHp * 0.65 && worldBoss.phase === 1) {
+              worldBoss.phase = 2;
+            }
+
+            // Defeat check
+            const bossDied = worldBoss.currentHp <= 0;
+            if (bossDied) {
+              worldBoss.isAlive = false;
+              worldBoss.currentHp = 0;
+              broadcast({
+                type: 'boss_defeated',
+                data: {
+                  mvpPlayer: participant.playerName,
+                  topDamageDealers: Array.from(worldBoss.participants.values())
+                    .sort((a, b) => b.totalDamage - a.totalDamage)
+                    .slice(0, 5),
+                  rewards: {
+                    manaCrystals: 500,
+                    voidManaCrystals: 50,
+                    exp: 2500,
+                  },
+                },
+              });
+
+              // Auto-respawn world boss after 35s
+              setTimeout(() => {
+                worldBoss = {
+                  bossId: 'calamity-void-dragon',
+                  name: 'Void-Calamity Leviathan',
+                  title: 'Cataclysmic Dragon Sovereign of the 9th Abyss',
+                  currentHp: 80000,
+                  maxHp: 80000,
+                  phase: 1,
+                  enragedTimerSeconds: 600,
+                  isAlive: true,
+                  participants: new Map(),
+                  recentAttacks: [],
+                  lastBossAttackTime: Date.now(),
+                };
+                broadcast({
+                  type: 'boss_respawned',
+                  data: {
+                    worldBoss: {
+                      ...worldBoss,
+                      participants: [],
+                    },
+                  },
+                });
+              }, 35000);
+            }
+
+            broadcast({
+              type: 'raid_sync',
+              data: {
+                currentHp: worldBoss.currentHp,
+                maxHp: worldBoss.maxHp,
+                phase: worldBoss.phase,
+                isAlive: worldBoss.isAlive,
+                recentAttack: {
+                  playerName: client.username,
+                  skillName,
+                  damage: actualDmg,
+                  isCrit,
+                },
+                participants: Array.from(worldBoss.participants.values()).sort((a, b) => b.totalDamage - a.totalDamage),
+              },
+            });
+            break;
+          }
+
+          case 'pvp_queue_toggle': {
+            const index = pvpQueue.indexOf(client.id);
+            if (index >= 0) {
+              pvpQueue.splice(index, 1);
+              client.status = 'idle';
+              ws.send(JSON.stringify({ type: 'pvp_queue_status', data: { inQueue: false } }));
+            } else {
+              pvpQueue.push(client.id);
+              client.status = 'in_queue';
+              ws.send(JSON.stringify({ type: 'pvp_queue_status', data: { inQueue: true } }));
+
+              // Try Matchmaking
+              if (pvpQueue.length >= 2) {
+                const p1Id = pvpQueue.shift()!;
+                const p2Id = pvpQueue.shift()!;
+                const p1 = connectedClients.get(p1Id);
+                const p2 = connectedClients.get(p2Id);
+
+                if (p1 && p2) {
+                  p1.status = 'in_pvp';
+                  p2.status = 'in_pvp';
+                  const duelId = `duel_${Date.now()}`;
+
+                  const duelData = {
+                    duelId,
+                    playerA: {
+                      id: p1.id,
+                      username: p1.username,
+                      title: p1.title,
+                      level: p1.level,
+                      hp: p1.hp,
+                      maxHp: p1.maxHp,
+                      equippedSkills: p1.equippedSkills,
+                    },
+                    playerB: {
+                      id: p2.id,
+                      username: p2.username,
+                      title: p2.title,
+                      level: p2.level,
+                      hp: p2.hp,
+                      maxHp: p2.maxHp,
+                      equippedSkills: p2.equippedSkills,
+                    },
+                    currentTurnPlayerId: p1.id,
+                  };
+
+                  p1.ws.send(JSON.stringify({ type: 'pvp_matched', data: duelData }));
+                  p2.ws.send(JSON.stringify({ type: 'pvp_matched', data: duelData }));
+                }
+              }
+            }
+            break;
+          }
+
+          case 'pvp_action_cast': {
+            const { targetId, skillName, damage = 40, isCrit = false } = msg.data || {};
+            const opponent = connectedClients.get(targetId);
+            if (opponent) {
+              opponent.hp = Math.max(0, opponent.hp - damage);
+              const actionPayload = {
+                attackerId: client.id,
+                attackerName: client.username,
+                skillName,
+                damage,
+                isCrit,
+                defenderHpRemaining: opponent.hp,
+                isDefenderDefeated: opponent.hp <= 0,
+              };
+
+              client.ws.send(JSON.stringify({ type: 'pvp_round_result', data: actionPayload }));
+              opponent.ws.send(JSON.stringify({ type: 'pvp_round_result', data: actionPayload }));
+
+              if (opponent.hp <= 0) {
+                client.pvpWins += 1;
+                client.pvpRating += 25;
+                opponent.pvpLosses += 1;
+                opponent.pvpRating = Math.max(800, opponent.pvpRating - 20);
+                client.status = 'idle';
+                opponent.status = 'idle';
+
+                const victoryMsg = {
+                  id: `pvp_${Date.now()}`,
+                  senderId: client.id,
+                  senderName: client.username,
+                  senderTitle: client.title,
+                  senderRank: client.publicRank,
+                  content: `⚔️ [PvP Arena] ${client.username} triumphed over ${opponent.username} in a lethal ranked duel! (+25 Rating)`,
+                  timestamp: Date.now(),
+                  type: 'pvp_alert',
+                };
+                broadcast({ type: 'new_chat', data: victoryMsg });
+              }
+            }
+            break;
+          }
+        }
+      } catch (err) {
+        console.error('Error handling WS message:', err);
+      }
+    });
+
+    ws.on('close', () => {
+      connectedClients.delete(clientId);
+      const queueIdx = pvpQueue.indexOf(clientId);
+      if (queueIdx >= 0) pvpQueue.splice(queueIdx, 1);
+      worldBoss.participants.delete(clientId);
+
+      broadcast({
+        type: 'player_left',
+        data: {
+          playerId: clientId,
+          onlineCount: connectedClients.size,
+        },
+      });
+    });
+  });
+}
+
 async function start() {
+  const server = http.createServer(app);
+
+  setupMultiplayerWebSockets(server);
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -552,8 +1106,8 @@ async function start() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`FORGER server running at http://localhost:${PORT}`);
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`FORGER Multiplayer Server running at http://localhost:${PORT} with WebSockets enabled.`);
   });
 }
 

@@ -4,6 +4,7 @@ import { SoundFX } from '../utils/soundEffects';
 import { fetchTTSAudio, playAudioUrl, stopAllAudio, narrateText } from '../services/ttsService';
 import { SkillEvolutionGraph } from './SkillEvolutionGraph';
 import { calculateActiveSynergies, getSkillSynergyMultiplier, calculateCombatPower } from '../utils/synergy';
+import { validateSkillSafety, getDailySkillQuota, recordSkillCreation } from '../utils/skillSafetyValidator';
 import {
   Hammer,
   Zap,
@@ -27,6 +28,8 @@ import {
   Sword,
   Link,
   FlameKindling,
+  ShieldAlert,
+  Clock,
 } from 'lucide-react';
 
 interface ForgeLabProps {
@@ -242,10 +245,30 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
     setTimeout(() => setForgeSuccessMsg(null), 5000);
   };
 
-  // Run AI Skill Deconstruction via Gemini
+  // Run AI Skill Deconstruction via Gemini with Anti-One-Shot Gatekeeper & Daily Limit Check
   const handleAnalyzeWithAI = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!customSkillName.trim()) return;
+
+    // Check Daily Quota (3 skills/day limit)
+    const quota = getDailySkillQuota();
+    if (quota.remainingToday <= 0) {
+      setAnalysisError(
+        `[DAILY SOUL LIMIT REACHED] — You have forged ${quota.usedToday}/${quota.maxPerDay} skills today. The Aetherian Cosmic Matrix allows a maximum of 3 custom skill manifestations per solar day to prevent soul collapse. Quota resets at midnight UTC.`
+      );
+      SoundFX.playDemonicAnomaly();
+      return;
+    }
+
+    // Client-side Safety Check against One-Shot / Instant-Kill skills
+    const safetyCheck = validateSkillSafety(customSkillName, customSkillDesc);
+    if (!safetyCheck.isPermitted) {
+      setAnalysisError(
+        `⛔ [PROHIBITED FATALITY MECHANIC] — ${safetyCheck.violationReason}. Skills that instantly kill or one-shot opponents are strictly prohibited by the Laws of Aetheria.`
+      );
+      SoundFX.playDemonicAnomaly();
+      return;
+    }
 
     try {
       setIsAnalyzingAI(true);
@@ -268,6 +291,11 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
       }
 
       const data = await res.json();
+      if (data.prohibited) {
+        setAnalysisError(`⛔ [FATALITY VIOLATION] — ${data.violationReason || 'One-shot skills prohibited'}`);
+        SoundFX.playDemonicAnomaly();
+        return;
+      }
       setAnalyzedSkillResult(data);
       SoundFX.playSystemNotification();
     } catch (err: any) {
@@ -281,6 +309,14 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
   // Forge the custom AI skill
   const handleForgeAICustomSkill = () => {
     if (!analyzedSkillResult) return;
+
+    // Check Daily Quota again
+    const quota = getDailySkillQuota();
+    if (quota.remainingToday <= 0) {
+      setForgeSuccessMsg(`[LIMIT EXCEEDED] — Daily forging quota (3/3) exhausted today.`);
+      setTimeout(() => setForgeSuccessMsg(null), 4000);
+      return;
+    }
 
     const cost = analyzedSkillResult.manaCostPermanent || 10;
     const availableCapacity = stats.usablePermanentManaCap ?? (stats.maxPermanentMana - (stats.boundPermanentMana || 0));
@@ -317,6 +353,9 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
       })),
     };
 
+    // Deduct from daily quota
+    recordSkillCreation(newSkill.name);
+
     SoundFX.playSkillForged();
     onUpdateSkills([...skills, newSkill]);
     setSelectedSkillId(newSkill.id);
@@ -324,7 +363,8 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
     setCustomSkillName('');
     setCustomSkillDesc('');
 
-    setForgeSuccessMsg(`[FORGER SYSTEM] — Successfully synthesized "${newSkill.name}"! Permanently bound ${cost} MP to maintain matrix.`);
+    const updatedQuota = getDailySkillQuota();
+    setForgeSuccessMsg(`[FORGER SYSTEM] — Successfully synthesized "${newSkill.name}"! (${updatedQuota.remainingToday}/${updatedQuota.maxPerDay} daily forges remaining)`);
     setTimeout(() => setForgeSuccessMsg(null), 5000);
   };
 
@@ -749,13 +789,25 @@ export const ForgeLab: React.FC<ForgeLabProps> = ({
 
           {/* AI Custom Forge Box Trigger */}
           <div className="p-4 rounded-lg bg-[#0a0a0a] border border-[#1a1a1a] space-y-3">
-            <div className="flex items-center space-x-2 text-white font-mono text-xs font-semibold uppercase tracking-wider">
-              <Sparkles className="w-3.5 h-3.5 text-white" />
-              <span>Deconstruct Concept with AI</span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2 text-white font-mono text-xs font-semibold uppercase tracking-wider">
+                <Sparkles className="w-3.5 h-3.5 text-white" />
+                <span>Deconstruct Concept with AI</span>
+              </div>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-950/80 border border-cyan-700/60 text-cyan-300">
+                {getDailySkillQuota().remainingToday}/3 Daily Forges
+              </span>
             </div>
+
             <p className="text-[11px] text-slate-500 leading-relaxed">
               Input any spell concept. Gemini AI decomposes its matrix structure, mana flow, and 15-stage evolution path.
             </p>
+
+            <div className="p-2 rounded bg-[#0f0709] border border-rose-950 text-[10px] font-mono text-rose-400/90 flex items-center gap-1.5">
+              <ShieldAlert className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+              <span>Anti-One-Shot Law Active: Instant death & 100% kill mechanics are forbidden.</span>
+            </div>
+
             <form onSubmit={handleAnalyzeWithAI} className="space-y-2.5">
               <input
                 type="text"
